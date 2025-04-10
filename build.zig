@@ -4,6 +4,7 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // Main executable
     const exe = b.addExecutable(.{
         .name = "game_engine",
         .root_source_file = .{ .cwd_relative = "src/main.zig" },
@@ -15,11 +16,11 @@ pub fn build(b: *std.Build) void {
     exe.linkLibC();
 
     // Add local library paths
-    exe.addLibraryPath(.{ .cwd_relative = "libs" });
+    exe.addLibraryPath(.{ .cwd_relative = "build/libs" });
 
     // Add include paths
-    exe.addIncludePath(.{ .cwd_relative = "deps/glfw/include" });
-    exe.addIncludePath(.{ .cwd_relative = "deps/glad/include" });
+    exe.addIncludePath(.{ .cwd_relative = "build/deps/glfw/include" });
+    exe.addIncludePath(.{ .cwd_relative = "build/deps/glad/include" });
 
     // Link GLFW from local DLL
     exe.linkSystemLibrary("glfw3dll");
@@ -30,12 +31,12 @@ pub fn build(b: *std.Build) void {
 
     // Add GLAD source
     exe.addCSourceFile(.{
-        .file = .{ .cwd_relative = "deps/glad/src/glad.c" },
+        .file = .{ .cwd_relative = "build/deps/glad/src/glad.c" },
         .flags = &.{},
     });
 
     // Install the DLL alongside the executable
-    b.installBinFile("libs/glfw3dll.dll", "glfw3dll.dll");
+    b.installBinFile("build/libs/glfw3dll.dll", "glfw3dll.dll");
 
     b.installArtifact(exe);
 
