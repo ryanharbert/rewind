@@ -3,166 +3,130 @@ const c = @cImport({
     @cInclude("glad/glad.h");
     @cInclude("GLFW/glfw3.h");
 });
-const platform = @import("../platform/common/platform.zig");
-const window = @import("../platform/windows/window.zig");
-const input = @import("../platform/windows/input.zig");
+const Mesh = @import("../core/rendering/mesh.zig").Mesh;
+const Shader = @import("../core/rendering/shader.zig").Shader;
+const matrix = @import("../math/matrix.zig");
 
-const Vertex = struct {
-    x: f32,
-    y: f32,
-    z: f32,
-    r: f32,
-    g: f32,
-    b: f32,
-};
+pub const CubeDemo = struct {
+    mesh: Mesh,
+    shader: Shader,
+    position: [3]f32,
+    rotation: f32,
 
-pub fn run() !void {
-    if (!platform.isWindows()) {
-        std.debug.print("This demo only supports Windows for now\n", .{});
-        return;
+    pub fn init() !CubeDemo {
+        // Define cube vertices (position, normal, texcoord)
+        const vertices = [_]f32{
+            // Front face
+            -1.0, -1.0,  1.0,   0.0,  0.0,  1.0,   0.0, 0.0,  // bottom-left
+             1.0, -1.0,  1.0,   0.0,  0.0,  1.0,   1.0, 0.0,  // bottom-right
+             1.0,  1.0,  1.0,   0.0,  0.0,  1.0,   1.0, 1.0,  // top-right
+            -1.0,  1.0,  1.0,   0.0,  0.0,  1.0,   0.0, 1.0,  // top-left
+            // Back face
+            -1.0, -1.0, -1.0,   0.0,  0.0, -1.0,   1.0, 0.0,  // bottom-left
+             1.0, -1.0, -1.0,   0.0,  0.0, -1.0,   0.0, 0.0,  // bottom-right
+             1.0,  1.0, -1.0,   0.0,  0.0, -1.0,   0.0, 1.0,  // top-right
+            -1.0,  1.0, -1.0,   0.0,  0.0, -1.0,   1.0, 1.0,  // top-left
+            // Right face
+             1.0, -1.0,  1.0,   1.0,  0.0,  0.0,   0.0, 0.0,  // bottom-left
+             1.0, -1.0, -1.0,   1.0,  0.0,  0.0,   1.0, 0.0,  // bottom-right
+             1.0,  1.0, -1.0,   1.0,  0.0,  0.0,   1.0, 1.0,  // top-right
+             1.0,  1.0,  1.0,   1.0,  0.0,  0.0,   0.0, 1.0,  // top-left
+            // Left face
+            -1.0, -1.0, -1.0,  -1.0,  0.0,  0.0,   0.0, 0.0,  // bottom-left
+            -1.0, -1.0,  1.0,  -1.0,  0.0,  0.0,   1.0, 0.0,  // bottom-right
+            -1.0,  1.0,  1.0,  -1.0,  0.0,  0.0,   1.0, 1.0,  // top-right
+            -1.0,  1.0, -1.0,  -1.0,  0.0,  0.0,   0.0, 1.0,  // top-left
+            // Top face
+            -1.0,  1.0,  1.0,   0.0,  1.0,  0.0,   0.0, 0.0,  // bottom-left
+             1.0,  1.0,  1.0,   0.0,  1.0,  0.0,   1.0, 0.0,  // bottom-right
+             1.0,  1.0, -1.0,   0.0,  1.0,  0.0,   1.0, 1.0,  // top-right
+            -1.0,  1.0, -1.0,   0.0,  1.0,  0.0,   0.0, 1.0,  // top-left
+            // Bottom face
+            -1.0, -1.0, -1.0,   0.0, -1.0,  0.0,   0.0, 0.0,  // bottom-left
+             1.0, -1.0, -1.0,   0.0, -1.0,  0.0,   1.0, 0.0,  // bottom-right
+             1.0, -1.0,  1.0,   0.0, -1.0,  0.0,   1.0, 1.0,  // top-right
+            -1.0, -1.0,  1.0,   0.0, -1.0,  0.0,   0.0, 1.0,  // top-left
+        };
+
+        // Define indices for the cube (6 faces * 2 triangles * 3 vertices)
+        const indices = [_]u32{
+            0,  1,  2,    2,  3,  0,   // Front
+            4,  5,  6,    6,  7,  4,   // Back
+            8,  9,  10,   10, 11, 8,   // Right
+            12, 13, 14,   14, 15, 12,  // Left
+            16, 17, 18,   18, 19, 16,  // Top
+            20, 21, 22,   22, 23, 20,  // Bottom
+        };
+
+        const mesh = try Mesh.init(&vertices, &indices);
+        const shader = try Shader.init("src/shaders/basic.vert", "src/shaders/basic.frag");
+
+        return CubeDemo{
+            .mesh = mesh,
+            .shader = shader,
+            .position = .{ 0.0, 0.0, 0.0 },
+            .rotation = 0.0,
+        };
     }
 
-    // Initialize window
-    var win = try window.Window.init(800, 600, "Triangle Demo");
-    defer win.deinit();
-
-    // Initialize input
-    var inp = input.Input.init(win.handle);
-
-    // Initialize GLAD
-    if (c.gladLoadGLLoader(@ptrCast(&c.glfwGetProcAddress)) == 0) {
-        std.debug.print("Failed to initialize GLAD\n", .{});
-        return;
+    pub fn deinit(self: *CubeDemo) void {
+        self.mesh.deinit();
+        self.shader.deinit();
     }
 
-    // Enable depth testing
-    c.glEnable(c.GL_DEPTH_TEST);
+    pub fn update(self: *CubeDemo, window: anytype) void {
+        const move_speed: f32 = 0.05;
+        const rotate_speed: f32 = 0.02;
 
-    // Create and compile shaders
-    const shader_program = try createShaderProgram();
-
-    // Define triangle vertices
-    const vertices = [_]Vertex{
-        .{ .x = -0.5, .y = -0.5, .z = 0.0, .r = 1.0, .g = 0.0, .b = 0.0 }, // Red
-        .{ .x = 0.5, .y = -0.5, .z = 0.0, .r = 0.0, .g = 1.0, .b = 0.0 },  // Green
-        .{ .x = 0.0, .y = 0.5, .z = 0.0, .r = 0.0, .g = 0.0, .b = 1.0 },   // Blue
-    };
-
-    // Create and bind VAO
-    var vao: c_uint = undefined;
-    c.glGenVertexArrays(1, &vao);
-    c.glBindVertexArray(vao);
-
-    // Create and bind VBO
-    var vbo: c_uint = undefined;
-    c.glGenBuffers(1, &vbo);
-    c.glBindBuffer(c.GL_ARRAY_BUFFER, vbo);
-    c.glBufferData(c.GL_ARRAY_BUFFER, @sizeOf(Vertex) * vertices.len, &vertices, c.GL_STATIC_DRAW);
-
-    // Position attribute
-    c.glVertexAttribPointer(0, 3, c.GL_FLOAT, c.GL_FALSE, @sizeOf(Vertex), @ptrFromInt(0));
-    c.glEnableVertexAttribArray(0);
-
-    // Color attribute
-    c.glVertexAttribPointer(1, 3, c.GL_FLOAT, c.GL_FALSE, @sizeOf(Vertex), @ptrFromInt(3 * @sizeOf(f32)));
-    c.glEnableVertexAttribArray(1);
-
-    // Position offset for movement
-    var pos_x: f32 = 0.0;
-    var pos_y: f32 = 0.0;
-    const move_speed: f32 = 0.02;
-
-    // Get uniform location
-    const offset_loc = c.glGetUniformLocation(shader_program, "offset");
-
-    // Main render loop
-    while (!win.shouldClose()) {
-        // Process input
-        if (inp.isKeyPressed(.Escape)) {
-            win.setShouldClose(true);
+        // Forward/backward movement relative to rotation
+        if (c.glfwGetKey(window.handle, c.GLFW_KEY_W) == c.GLFW_PRESS) {
+            self.position[0] -= @sin(self.rotation) * move_speed;
+            self.position[2] -= @cos(self.rotation) * move_speed;
+        }
+        if (c.glfwGetKey(window.handle, c.GLFW_KEY_S) == c.GLFW_PRESS) {
+            self.position[0] += @sin(self.rotation) * move_speed;
+            self.position[2] += @cos(self.rotation) * move_speed;
         }
 
-        // Update position based on input
-        if (inp.isKeyPressed(.W)) pos_y += move_speed;
-        if (inp.isKeyPressed(.S)) pos_y -= move_speed;
-        if (inp.isKeyPressed(.A)) pos_x -= move_speed;
-        if (inp.isKeyPressed(.D)) pos_x += move_speed;
-
-        // Keep triangle within bounds
-        pos_x = std.math.clamp(pos_x, -1.0, 1.0);
-        pos_y = std.math.clamp(pos_y, -1.0, 1.0);
-
-        // Clear the screen
-        c.glClearColor(0.2, 0.3, 0.3, 1.0);
-        c.glClear(c.GL_COLOR_BUFFER_BIT | c.GL_DEPTH_BUFFER_BIT);
-
-        // Use shader program and update position
-        c.glUseProgram(shader_program);
-        c.glUniform2f(offset_loc, pos_x, pos_y);
-
-        // Draw triangle
-        c.glBindVertexArray(vao);
-        c.glDrawArrays(c.GL_TRIANGLES, 0, 3);
-
-        // Swap buffers and poll events
-        win.swapBuffers();
-        window.Window.pollEvents();
-    }
-}
-
-fn createShaderProgram() !c_uint {
-    const vertex_shader_source: [*:0]const u8 =
-        \\#version 330 core
-        \\layout (location = 0) in vec3 aPos;
-        \\layout (location = 1) in vec3 aColor;
-        \\out vec3 ourColor;
-        \\uniform vec2 offset;
-        \\void main() {
-        \\    gl_Position = vec4(aPos.x + offset.x, aPos.y + offset.y, aPos.z, 1.0);
-        \\    ourColor = aColor;
-        \\}
-    ;
-
-    const fragment_shader_source: [*:0]const u8 =
-        \\#version 330 core
-        \\in vec3 ourColor;
-        \\out vec4 FragColor;
-        \\void main() {
-        \\    FragColor = vec4(ourColor, 1.0);
-        \\}
-    ;
-
-    const vertex_shader = c.glCreateShader(c.GL_VERTEX_SHADER);
-    c.glShaderSource(vertex_shader, 1, &vertex_shader_source, null);
-    c.glCompileShader(vertex_shader);
-
-    var success: c_int = undefined;
-    c.glGetShaderiv(vertex_shader, c.GL_COMPILE_STATUS, &success);
-    if (success == 0) {
-        return error.ShaderCompilationFailed;
+        // Rotation
+        if (c.glfwGetKey(window.handle, c.GLFW_KEY_A) == c.GLFW_PRESS) {
+            self.rotation += rotate_speed;
+        }
+        if (c.glfwGetKey(window.handle, c.GLFW_KEY_D) == c.GLFW_PRESS) {
+            self.rotation -= rotate_speed;
+        }
     }
 
-    const fragment_shader = c.glCreateShader(c.GL_FRAGMENT_SHADER);
-    c.glShaderSource(fragment_shader, 1, &fragment_shader_source, null);
-    c.glCompileShader(fragment_shader);
+    pub fn draw(self: *CubeDemo, view: [4][4]f32, projection: [4][4]f32) void {
+        self.shader.use();
 
-    c.glGetShaderiv(fragment_shader, c.GL_COMPILE_STATUS, &success);
-    if (success == 0) {
-        return error.ShaderCompilationFailed;
+        // Create model matrix with rotation and translation
+        var model = matrix.identityMatrix(f32, 4);
+        
+        // Apply rotation around Y axis
+        const cos_r = @cos(self.rotation);
+        const sin_r = @sin(self.rotation);
+        model[0][0] = cos_r;
+        model[0][2] = sin_r;
+        model[2][0] = -sin_r;
+        model[2][2] = cos_r;
+
+        // Apply translation
+        model[3][0] = self.position[0];
+        model[3][1] = self.position[1];
+        model[3][2] = self.position[2];
+
+        self.shader.setMat4("model", &@as([16]f32, @bitCast(model)));
+        self.shader.setMat4("view", &@as([16]f32, @bitCast(view)));
+        self.shader.setMat4("projection", &@as([16]f32, @bitCast(projection)));
+
+        // Set lighting properties
+        self.shader.setVec3("lightPos", 2.0, 2.0, 2.0);
+        self.shader.setVec3("viewPos", 0.0, 0.0, 3.0);
+        self.shader.setVec3("lightColor", 1.0, 1.0, 1.0);
+        self.shader.setVec3("objectColor", 0.7, 0.2, 0.2); // Red-ish color
+
+        // Draw the cube
+        self.mesh.draw(self.shader.id);
     }
-
-    const shader_program = c.glCreateProgram();
-    c.glAttachShader(shader_program, vertex_shader);
-    c.glAttachShader(shader_program, fragment_shader);
-    c.glLinkProgram(shader_program);
-
-    c.glGetProgramiv(shader_program, c.GL_LINK_STATUS, &success);
-    if (success == 0) {
-        return error.ShaderLinkFailed;
-    }
-
-    c.glDeleteShader(vertex_shader);
-    c.glDeleteShader(fragment_shader);
-
-    return shader_program;
-} 
+}; 
