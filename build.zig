@@ -14,20 +14,28 @@ pub fn build(b: *std.Build) void {
     // Link against libc
     exe.linkLibC();
 
-    // Link GLFW
+    // Add local library paths
+    exe.addLibraryPath(.{ .cwd_relative = "libs" });
+
+    // Add include paths
+    exe.addIncludePath(.{ .cwd_relative = "deps/glfw/include" });
+    exe.addIncludePath(.{ .cwd_relative = "deps/glad/include" });
+
+    // Link GLFW from local DLL
     exe.linkSystemLibrary("glfw3dll");
     exe.linkSystemLibrary("gdi32");
     exe.linkSystemLibrary("user32");
     exe.linkSystemLibrary("shell32");
     exe.linkSystemLibrary("opengl32");
 
-    // Add GLFW include path
-    exe.addIncludePath(.{ .cwd_relative = "vcpkg/installed/x64-windows/include" });
-    exe.addLibraryPath(.{ .cwd_relative = "vcpkg/installed/x64-windows/lib" });
+    // Add GLAD source
+    exe.addCSourceFile(.{
+        .file = .{ .cwd_relative = "deps/glad/src/glad.c" },
+        .flags = &.{},
+    });
 
-    // Add GLAD
-    exe.addCSourceFile(.{ .file = .{ .cwd_relative = "deps/glad/src/glad.c" }, .flags = &.{} });
-    exe.addIncludePath(.{ .cwd_relative = "deps/glad/include" });
+    // Install the DLL alongside the executable
+    b.installBinFile("libs/glfw3dll.dll", "glfw3dll.dll");
 
     b.installArtifact(exe);
 

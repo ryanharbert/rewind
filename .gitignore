@@ -14,18 +14,13 @@ build/
 *.obj
 *.exe
 *.dll
+!libs/*.dll
 *.so
 *.dylib
 
-# Dependencies
-vcpkg/
-deps/glad/
-deps/glfw/
-
-# Generated files
-*.glad.c
-*.glad.h
-*.khrplatform.h
+# Dependencies that should be committed
+!deps/glad/
+!deps/glfw/include/
 
 # OS specific files
 .DS_Store
@@ -41,4 +36,7 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
-*.bak 
+*.bak
+
+# Old dependency management
+vcpkg/ 
