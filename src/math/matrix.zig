@@ -10,6 +10,19 @@ pub fn identityMatrix(comptime T: type, comptime size: usize) [size][size]T {
     return matrix;
 }
 
+pub fn multiply(a: [4][4]f32, b: [4][4]f32) [4][4]f32 {
+    var result: [4][4]f32 = undefined;
+    for (0..4) |i| {
+        for (0..4) |j| {
+            result[i][j] = 0;
+            for (0..4) |k| {
+                result[i][j] += a[i][k] * b[k][j];
+            }
+        }
+    }
+    return result;
+}
+
 pub fn perspectiveMatrix(fov_degrees: f32, aspect_ratio: f32, near: f32, far: f32) [4][4]f32 {
     var matrix = identityMatrix(f32, 4);
     const fov_radians = fov_degrees * std.math.pi / 180.0;
