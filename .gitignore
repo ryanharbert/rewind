@@ -1,0 +1,44 @@
+# Zig build artifacts
+zig-cache/
+zig-out/
+
+# IDE specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build artifacts
+build/
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Dependencies
+vcpkg/
+deps/glad/
+deps/glfw/
+
+# Generated files
+*.glad.c
+*.glad.h
+*.khrplatform.h
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Debug files
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.a
+
+# Temporary files
+*.tmp
+*.temp
+*.bak 
