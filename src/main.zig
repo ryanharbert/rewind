@@ -4,21 +4,33 @@ const c = @cImport({
     @cInclude("GLFW/glfw3.h");
 });
 
+const Shader = @import("engine/shader.zig").Shader;
+const Texture = @import("engine/texture.zig").Texture;
+
 const vertex_shader_source =
     \\#version 330 core
     \\layout (location = 0) in vec3 aPos;
+    \\layout (location = 1) in vec2 aTexCoord;
+    \\
+    \\out vec2 TexCoord;
+    \\
     \\void main()
     \\{
-    \\    gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);
+    \\    gl_Position = vec4(aPos, 1.0);
+    \\    TexCoord = aTexCoord;
     \\}
 ;
 
 const fragment_shader_source =
     \\#version 330 core
     \\out vec4 FragColor;
+    \\
+    \\in vec2 TexCoord;
+    \\uniform sampler2D ourTexture;
+    \\
     \\void main()
     \\{
-    \\    FragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f);
+    \\    FragColor = texture(ourTexture, TexCoord);
     \\}
 ;
 
@@ -53,67 +65,56 @@ pub fn main() !void {
         return;
     }
 
-    // Compile vertex shader
-    const vertex_shader = c.glCreateShader(c.GL_VERTEX_SHADER);
-    c.glShaderSource(vertex_shader, 1, &vertex_shader_source.ptr, null);
-    c.glCompileShader(vertex_shader);
-
-    var success: c_int = undefined;
-    var info_log: [512]u8 = undefined;
-    c.glGetShaderiv(vertex_shader, c.GL_COMPILE_STATUS, &success);
-    if (success == 0) {
-        c.glGetShaderInfoLog(vertex_shader, 512, null, &info_log);
-        std.debug.print("ERROR::SHADER::VERTEX::COMPILATION_FAILED\n{s}\n", .{info_log});
-        return;
-    }
-
-    // Compile fragment shader
-    const fragment_shader = c.glCreateShader(c.GL_FRAGMENT_SHADER);
-    c.glShaderSource(fragment_shader, 1, &fragment_shader_source.ptr, null);
-    c.glCompileShader(fragment_shader);
-
-    c.glGetShaderiv(fragment_shader, c.GL_COMPILE_STATUS, &success);
-    if (success == 0) {
-        c.glGetShaderInfoLog(fragment_shader, 512, null, &info_log);
-        std.debug.print("ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n{s}\n", .{info_log});
-        return;
-    }
-
     // Create shader program
-    const shader_program = c.glCreateProgram();
-    c.glAttachShader(shader_program, vertex_shader);
-    c.glAttachShader(shader_program, fragment_shader);
-    c.glLinkProgram(shader_program);
-
-    c.glGetProgramiv(shader_program, c.GL_LINK_STATUS, &success);
-    if (success == 0) {
-        c.glGetProgramInfoLog(shader_program, 512, null, &info_log);
-        std.debug.print("ERROR::SHADER::PROGRAM::LINKING_FAILED\n{s}\n", .{info_log});
+    const shader = Shader.init(vertex_shader_source, fragment_shader_source) catch {
+        std.debug.print("Failed to create shader program\n", .{});
         return;
-    }
+    };
+    defer shader.deinit();
 
-    c.glDeleteShader(vertex_shader);
-    c.glDeleteShader(fragment_shader);
+    // Create texture (using dummy path for now - will create checkerboard pattern)
+    const texture = Texture.init("dummy.png") catch {
+        std.debug.print("Failed to create texture\n", .{});
+        return;
+    };
+    defer texture.deinit();
 
-    // Triangle vertices
+    // Quad vertices with texture coordinates
     const vertices = [_]f32{
-        -0.5, -0.5, 0.0,
-        0.5, -0.5, 0.0,
-        0.0, 0.5, 0.0
+        // positions     // texture coords
+        0.5,  0.5, 0.0,  1.0, 1.0, // top right
+        0.5, -0.5, 0.0,  1.0, 0.0, // bottom right
+        -0.5, -0.5, 0.0, 0.0, 0.0, // bottom left
+        -0.5,  0.5, 0.0, 0.0, 1.0  // top left
+    };
+
+    const indices = [_]c_uint{
+        0, 1, 3, // first triangle
+        1, 2, 3  // second triangle
     };
 
     var VBO: c_uint = undefined;
     var VAO: c_uint = undefined;
+    var EBO: c_uint = undefined;
     c.glGenVertexArrays(1, &VAO);
     c.glGenBuffers(1, &VBO);
+    c.glGenBuffers(1, &EBO);
 
     c.glBindVertexArray(VAO);
 
     c.glBindBuffer(c.GL_ARRAY_BUFFER, VBO);
     c.glBufferData(c.GL_ARRAY_BUFFER, @sizeOf(@TypeOf(vertices)), &vertices, c.GL_STATIC_DRAW);
 
-    c.glVertexAttribPointer(0, 3, c.GL_FLOAT, c.GL_FALSE, 3 * @sizeOf(f32), null);
+    c.glBindBuffer(c.GL_ELEMENT_ARRAY_BUFFER, EBO);
+    c.glBufferData(c.GL_ELEMENT_ARRAY_BUFFER, @sizeOf(@TypeOf(indices)), &indices, c.GL_STATIC_DRAW);
+
+    // Position attribute
+    c.glVertexAttribPointer(0, 3, c.GL_FLOAT, c.GL_FALSE, 5 * @sizeOf(f32), null);
     c.glEnableVertexAttribArray(0);
+
+    // Texture coordinate attribute
+    c.glVertexAttribPointer(1, 2, c.GL_FLOAT, c.GL_FALSE, 5 * @sizeOf(f32), @ptrFromInt(3 * @sizeOf(f32)));
+    c.glEnableVertexAttribArray(1);
 
     c.glBindBuffer(c.GL_ARRAY_BUFFER, 0);
     c.glBindVertexArray(0);
@@ -125,14 +126,17 @@ pub fn main() !void {
         c.glClearColor(0.2, 0.3, 0.3, 1.0);
         c.glClear(c.GL_COLOR_BUFFER_BIT);
 
-        c.glUseProgram(shader_program);
+        texture.bind();
+        shader.use();
+        shader.setInt("ourTexture", 0);
+        
         c.glBindVertexArray(VAO);
-        c.glDrawArrays(c.GL_TRIANGLES, 0, 3);
+        c.glDrawElements(c.GL_TRIANGLES, 6, c.GL_UNSIGNED_INT, null);
 
         c.glfwSwapBuffers(window);
     }
 
     c.glDeleteVertexArrays(1, &VAO);
     c.glDeleteBuffers(1, &VBO);
-    c.glDeleteProgram(shader_program);
+    c.glDeleteBuffers(1, &EBO);
 }

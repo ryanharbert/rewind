@@ -29,6 +29,14 @@ pub fn build(b: *std.Build) void {
         .file = b.path("libs/glad/src/glad.c"),
         .flags = &.{"-std=c99"}
     });
+
+    // Add STB Image
+    exe.addIncludePath(b.path("libs/stb"));
+    exe.addCSourceFile(.{ 
+        .file = b.path("libs/stb/stb_image.c"),
+        .flags = &.{"-std=c99"}
+    });
+
     exe.linkLibC();
 
     b.installArtifact(exe);
