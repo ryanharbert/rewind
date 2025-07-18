@@ -49,4 +49,39 @@ pub const Texture = struct {
     pub fn deinit(self: *const Texture) void {
         c.glDeleteTextures(1, &self.id);
     }
+
+    pub fn createTestSprite() !Texture {
+        var texture_id: c_uint = undefined;
+        c.glGenTextures(1, &texture_id);
+        c.glBindTexture(c.GL_TEXTURE_2D, texture_id);
+
+        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_WRAP_S, c.GL_REPEAT);
+        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_WRAP_T, c.GL_REPEAT);
+        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MIN_FILTER, c.GL_NEAREST);
+        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MAG_FILTER, c.GL_NEAREST);
+
+        // Create a simple 32x32 checkerboard pattern
+        const size = 32;
+        var data: [size * size * 3]u8 = undefined;
+        
+        for (0..size) |y| {
+            for (0..size) |x| {
+                const index = (y * size + x) * 3;
+                const checker = ((x / 8) + (y / 8)) % 2;
+                const color: u8 = if (checker == 0) 255 else 64;
+                data[index] = color;     // R
+                data[index + 1] = color; // G  
+                data[index + 2] = color; // B
+            }
+        }
+
+        c.glTexImage2D(c.GL_TEXTURE_2D, 0, c.GL_RGB, size, size, 0, c.GL_RGB, c.GL_UNSIGNED_BYTE, &data);
+        c.glGenerateMipmap(c.GL_TEXTURE_2D);
+
+        return Texture{
+            .id = texture_id,
+            .width = size,
+            .height = size,
+        };
+    }
 };
