@@ -87,11 +87,17 @@ pub const Renderer = struct {
         defer self.allocator.free(vertices);
 
         var sprite_count: usize = 0;
+        var current_texture_name: ?[]const u8 = null;
         for (transforms, sprite_renderers) |transform, sprite_renderer| {
             if (!sprite_renderer.visible) continue;
 
             const texture = self.asset_bundle.getTexture(sprite_renderer.sprite_name) orelse continue;
-            _ = texture;
+            
+            // Bind texture if it's different from the current one
+            if (current_texture_name == null or !std.mem.eql(u8, current_texture_name.?, sprite_renderer.sprite_name)) {
+                texture.bind();
+                current_texture_name = sprite_renderer.sprite_name;
+            }
             
             // Calculate sprite quad vertices with rotation
             const half_width = 0.5 * transform.scale.toFloatX();
@@ -146,13 +152,7 @@ pub const Renderer = struct {
         c.glBindBuffer(c.GL_ARRAY_BUFFER, self.VBO);
         c.glBufferSubData(c.GL_ARRAY_BUFFER, 0, @intCast(sprite_count * VERTICES_PER_SPRITE * 5 * @sizeOf(f32)), vertices.ptr);
 
-        // For now, just bind the first texture (later we'll implement texture atlasing)
-        if (sprite_renderers.len > 0) {
-            if (self.asset_bundle.getTexture(sprite_renderers[0].sprite_name)) |texture| {
-                texture.bind();
-            }
-        }
-
+        // Render each sprite individually with its own texture
         self.shader.use();
         self.shader.setInt("ourTexture", 0);
         
@@ -165,7 +165,25 @@ pub const Renderer = struct {
         self.shader.setFloat("aspectRatio", aspect_ratio);
 
         c.glBindVertexArray(self.VAO);
-        c.glDrawElements(c.GL_TRIANGLES, @intCast(sprite_count * INDICES_PER_SPRITE), c.GL_UNSIGNED_INT, null);
+        
+        // Render each sprite separately to handle different textures
+        var rendered_sprites: usize = 0;
+        for (sprite_renderers) |sprite_renderer| {
+            if (!sprite_renderer.visible) continue;
+            
+            if (self.asset_bundle.getTexture(sprite_renderer.sprite_name)) |texture| {
+                texture.bind();
+                
+                // Upload this sprite's vertex data
+                const sprite_vertex_data = vertices[rendered_sprites * VERTICES_PER_SPRITE * 5..(rendered_sprites + 1) * VERTICES_PER_SPRITE * 5];
+                c.glBufferSubData(c.GL_ARRAY_BUFFER, 0, @intCast(sprite_vertex_data.len * @sizeOf(f32)), sprite_vertex_data.ptr);
+                
+                // Draw this sprite
+                c.glDrawElements(c.GL_TRIANGLES, INDICES_PER_SPRITE, c.GL_UNSIGNED_INT, null);
+                
+                rendered_sprites += 1;
+            }
+        }
     }
 
     pub fn deinit(self: *Renderer) void {
