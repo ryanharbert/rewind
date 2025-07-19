@@ -66,6 +66,12 @@ pub const Engine = struct {
     renderer: Renderer,
     config: EngineConfig,
     
+    // FPS tracking
+    fps_counter: f64,
+    fps_timer: f64,
+    frame_count: u32,
+    debug_timer: f64,
+    
     pub fn init(allocator: std.mem.Allocator, config: EngineConfig) !Engine {
         if (c.glfwInit() == c.GLFW_FALSE) {
             return error.GLFWInitFailed;
@@ -89,6 +95,9 @@ pub const Engine = struct {
         c.glfwMakeContextCurrent(window);
         _ = c.glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
         
+        // Enable VSync to cap framerate
+        c.glfwSwapInterval(1);
+        
         if (c.gladLoadGLLoader(@ptrCast(&c.glfwGetProcAddress)) == 0) {
             c.glfwDestroyWindow(window);
             c.glfwTerminate();
@@ -111,6 +120,10 @@ pub const Engine = struct {
             .asset_bundle = asset_bundle,
             .renderer = renderer,
             .config = config,
+            .fps_counter = 0.0,
+            .fps_timer = 0.0,
+            .frame_count = 0,
+            .debug_timer = 0.0,
         };
     }
     
@@ -141,6 +154,38 @@ pub const Engine = struct {
             const current_time = c.glfwGetTime();
             const delta_time = @as(f32, @floatCast(current_time - last_time));
             last_time = current_time;
+            
+            // Update FPS counter
+            self.frame_count += 1;
+            self.fps_timer += delta_time;
+            self.debug_timer += delta_time;
+            
+            // Calculate FPS every second
+            if (self.fps_timer >= 1.0) {
+                self.fps_counter = @as(f64, @floatFromInt(self.frame_count)) / self.fps_timer;
+                self.frame_count = 0;
+                self.fps_timer = 0.0;
+            }
+            
+            // Print debug info every 3 seconds
+            if (self.debug_timer >= 3.0) {
+                std.debug.print("\n=== PERFORMANCE DEBUG ===\n", .{});
+                std.debug.print("Current FPS: {d:.1}\n", .{self.fps_counter});
+                std.debug.print("Frame time: {d:.2}ms\n", .{(1.0 / self.fps_counter) * 1000.0});
+                std.debug.print("Delta time: {d:.3}ms\n", .{delta_time * 1000.0});
+                
+                // GPU info
+                var gpu_memory: c_int = undefined;
+                c.glGetIntegerv(0x9049, &gpu_memory); // GL_GPU_MEMORY_INFO_TOTAL_AVAILABLE_MEMORY_NVX
+                if (gpu_memory > 0) {
+                    std.debug.print("GPU Memory Available: {}KB\n", .{gpu_memory});
+                }
+                
+                std.debug.print("Sprites rendered per frame: 3 (background + player + enemy)\n", .{});
+                std.debug.print("Draw calls per frame: 3 (individual textures)\n", .{});
+                std.debug.print("========================\n", .{});
+                self.debug_timer = 0.0;
+            }
             
             // Exit on escape
             if (self.input.isKeyPressed(.escape)) {
