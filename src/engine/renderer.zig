@@ -7,6 +7,7 @@ const AssetBundle = @import("asset_bundle.zig").AssetBundle;
 const Transform = @import("transform.zig").Transform;
 const SpriteRenderer = @import("sprite_renderer.zig").SpriteRenderer;
 const math = @import("math.zig");
+const Camera = @import("camera.zig").Camera;
 
 const MAX_SPRITES = 1000;
 const VERTICES_PER_SPRITE = 4;
@@ -78,7 +79,7 @@ pub const Renderer = struct {
         };
     }
 
-    pub fn render(self: *Renderer, transforms: []const Transform, sprite_renderers: []const SpriteRenderer) !void {
+    pub fn render(self: *Renderer, transforms: []const Transform, sprite_renderers: []const SpriteRenderer, camera: *const Camera) !void {
         if (transforms.len != sprite_renderers.len) {
             return error.MismatchedArrayLengths;
         }
@@ -156,13 +157,16 @@ pub const Renderer = struct {
         self.shader.use();
         self.shader.setInt("ourTexture", 0);
         
-        // Get viewport dimensions and calculate aspect ratio
+        // Update camera aspect ratio and get view matrix
+        var updated_camera = camera.*;
         var viewport: [4]c_int = undefined;
         c.glGetIntegerv(c.GL_VIEWPORT, &viewport);
         const width = @as(f32, @floatFromInt(viewport[2]));
         const height = @as(f32, @floatFromInt(viewport[3]));
-        const aspect_ratio = width / height;
-        self.shader.setFloat("aspectRatio", aspect_ratio);
+        updated_camera.setAspectRatio(width / height);
+        
+        const view_matrix = updated_camera.getViewMatrix();
+        self.shader.setMat4("viewMatrix", &view_matrix);
 
         c.glBindVertexArray(self.VAO);
         

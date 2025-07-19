@@ -13,21 +13,20 @@ pub const Renderer = @import("renderer.zig").Renderer;
 pub const Texture = @import("texture.zig").Texture;
 pub const Shader = @import("shader.zig").Shader;
 pub const AssetBundle = @import("asset_bundle.zig").AssetBundle;
+pub const Camera = @import("camera.zig").Camera;
 
 const default_vertex_shader =
     \\#version 330 core
     \\layout (location = 0) in vec3 aPos;
     \\layout (location = 1) in vec2 aTexCoord;
     \\
-    \\uniform float aspectRatio;
+    \\uniform mat4 viewMatrix;
     \\
     \\out vec2 TexCoord;
     \\
     \\void main()
     \\{
-    \\    vec3 correctedPos = aPos;
-    \\    correctedPos.x /= aspectRatio;
-    \\    gl_Position = vec4(correctedPos.x, correctedPos.y, correctedPos.z, 1.0);
+    \\    gl_Position = viewMatrix * vec4(aPos, 1.0);
     \\    TexCoord = aTexCoord;
     \\}
 ;

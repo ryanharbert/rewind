@@ -11,6 +11,8 @@ pub const Key = enum(c_int) {
     a = c.GLFW_KEY_A,
     s = c.GLFW_KEY_S,
     d = c.GLFW_KEY_D,
+    q = c.GLFW_KEY_Q,
+    e = c.GLFW_KEY_E,
     
     // Arrow keys
     up = c.GLFW_KEY_UP,

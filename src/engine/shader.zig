@@ -67,6 +67,11 @@ pub const Shader = struct {
         const location = c.glGetUniformLocation(self.id, name.ptr);
         c.glUniform2f(location, x, y);
     }
+    
+    pub fn setMat4(self: *const Shader, name: []const u8, matrix: *const [16]f32) void {
+        const location = c.glGetUniformLocation(self.id, name.ptr);
+        c.glUniformMatrix4fv(location, 1, c.GL_FALSE, matrix.ptr);
+    }
 
     pub fn deinit(self: *const Shader) void {
         c.glDeleteProgram(self.id);

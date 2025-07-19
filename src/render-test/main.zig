@@ -199,7 +199,10 @@ pub fn main() !void {
         c.glClearColor(0.1, 0.1, 0.1, 1.0);
         c.glClear(c.GL_COLOR_BUFFER_BIT);
 
-        try renderer.render(transforms, sprite_renderers);
+        // Create a basic camera for render test
+        const Engine = @import("engine");
+        const default_camera = Engine.Camera.init(0.0, 0.0, 1.0);
+        try renderer.render(transforms, sprite_renderers, &default_camera);
 
         c.glfwSwapBuffers(window);
     }

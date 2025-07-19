@@ -73,4 +73,46 @@ pub const Texture = struct {
         c.glDeleteTextures(1, &self.id);
     }
 
+    pub fn createBackgroundTexture() !Texture {
+        var texture_id: c_uint = undefined;
+        c.glGenTextures(1, &texture_id);
+        c.glBindTexture(c.GL_TEXTURE_2D, texture_id);
+
+        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_WRAP_S, c.GL_REPEAT);
+        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_WRAP_T, c.GL_REPEAT);
+        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MIN_FILTER, c.GL_LINEAR);
+        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MAG_FILTER, c.GL_LINEAR);
+
+        // Create a simple tiled background pattern
+        const size = 128;
+        var data: [size * size * 3]u8 = undefined;
+        
+        for (0..size) |y| {
+            for (0..size) |x| {
+                const index = (y * size + x) * 3;
+                // Create a subtle grid pattern
+                const grid_x = (x % 16 == 0 or x % 16 == 15);
+                const grid_y = (y % 16 == 0 or y % 16 == 15);
+                const is_grid = grid_x or grid_y;
+                
+                const base_color: u8 = 40;
+                const grid_color: u8 = 50;
+                const color = if (is_grid) grid_color else base_color;
+                
+                data[index] = color;     // R
+                data[index + 1] = color; // G  
+                data[index + 2] = color; // B
+            }
+        }
+
+        c.glTexImage2D(c.GL_TEXTURE_2D, 0, c.GL_RGB, size, size, 0, c.GL_RGB, c.GL_UNSIGNED_BYTE, &data);
+        c.glGenerateMipmap(c.GL_TEXTURE_2D);
+
+        return Texture{
+            .id = texture_id,
+            .width = size,
+            .height = size,
+        };
+    }
+
 };

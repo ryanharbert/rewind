@@ -9,6 +9,7 @@ const Transform = @import("engine").Transform;
 const SpriteRenderer = @import("engine").SpriteRenderer;
 const Renderer = @import("engine").Renderer;
 const Texture = @import("engine").Texture;
+const Camera = @import("engine").Camera;
 
 const SimpleGameplayTest = struct {
     allocator: std.mem.Allocator,
@@ -21,6 +22,21 @@ const SimpleGameplayTest = struct {
     enemy_transform: Transform,
     enemy_sprite: SpriteRenderer,
     
+    // Camera
+    camera: Camera,
+    
+    // Background
+    background_transform: Transform,
+    background_sprite: SpriteRenderer,
+    
+    // World boundaries
+    world_bounds: struct { 
+        min_x: f32, 
+        max_x: f32, 
+        min_y: f32, 
+        max_y: f32 
+    } = .{ .min_x = -4.0, .max_x = 4.0, .min_y = -4.0, .max_y = 4.0 },
+    
     pub fn init(allocator: std.mem.Allocator, engine: *Engine) !SimpleGameplayTest {
         // Load player texture
         const player_texture = try Texture.init("assets/textures/player.png");
@@ -29,6 +45,10 @@ const SimpleGameplayTest = struct {
         // Load enemy texture
         const enemy_texture = try Texture.init("assets/textures/enemy.png");
         try engine.getAssetBundle().textures.put(try allocator.dupe(u8, "enemy"), enemy_texture);
+        
+        // Create background texture
+        const background_texture = try Texture.createBackgroundTexture();
+        try engine.getAssetBundle().textures.put(try allocator.dupe(u8, "background"), background_texture);
         
         // Create player in center
         var player_transform = Transform.init(0.0, 0.0);
@@ -40,8 +60,19 @@ const SimpleGameplayTest = struct {
         enemy_transform.setScale(0.4, 0.4);
         const enemy_sprite = SpriteRenderer.init("enemy");
         
+        // Create large background
+        var background_transform = Transform.init(0.0, 0.0);
+        background_transform.setScale(8.0, 8.0); // Large background
+        const background_sprite = SpriteRenderer.init("background");
+        
+        // Create camera with initial zoom (zoomed out to see more world)
+        const camera = Camera.init(0.0, 0.0, 0.5);
+        
+        // Use default world boundaries
+        
         std.debug.print("Created player with texture ID: {}\n", .{player_texture.id});
         std.debug.print("Created enemy with texture ID: {}\n", .{enemy_texture.id});
+        std.debug.print("Created background with texture ID: {}\n", .{background_texture.id});
         
         return SimpleGameplayTest{
             .allocator = allocator,
@@ -49,6 +80,9 @@ const SimpleGameplayTest = struct {
             .player_sprite = player_sprite,
             .enemy_transform = enemy_transform,
             .enemy_sprite = enemy_sprite,
+            .camera = camera,
+            .background_transform = background_transform,
+            .background_sprite = background_sprite,
         };
     }
     
@@ -84,10 +118,14 @@ const SimpleGameplayTest = struct {
             const forward_y = @cos(self.player_transform.rotation);
             
             const move_distance = forward_input * move_speed * delta_time;
-            self.player_transform.translate(
-                forward_x * move_distance,
-                forward_y * move_distance
-            );
+            const new_x = self.player_transform.position.toFloat().x + forward_x * move_distance;
+            const new_y = self.player_transform.position.toFloat().y + forward_y * move_distance;
+            
+            // Constrain to world boundaries
+            const constrained_x = @min(@max(new_x, self.world_bounds.min_x), self.world_bounds.max_x);
+            const constrained_y = @min(@max(new_y, self.world_bounds.min_y), self.world_bounds.max_y);
+            
+            self.player_transform.setPosition(constrained_x, constrained_y);
         }
         
         // Enemy AI - follow the player
@@ -118,14 +156,32 @@ const SimpleGameplayTest = struct {
             // Face the player (optional - makes enemy point towards player)
             self.enemy_transform.rotation = std.math.atan2(dx, dy);
         }
+        
+        // Camera controls and following
+        const player_position = self.player_transform.position.toFloat();
+        
+        // Camera zoom controls
+        if (input.isKeyDown(.q)) {
+            self.camera.adjustZoom(-1.0 * delta_time); // Zoom out
+        }
+        if (input.isKeyDown(.e)) {
+            self.camera.adjustZoom(1.0 * delta_time); // Zoom in
+        }
+        
+        // Make camera follow player smoothly
+        self.camera.followTarget(player_position.x, player_position.y, delta_time, 8.0);
+        
+        // Update camera aspect ratio (in case window was resized)
+        // This will be handled by the renderer during rendering
     }
     
     pub fn render(self: *SimpleGameplayTest, renderer: *Renderer) !void {
-        // Render both player and enemy sprites
-        var transforms = [_]Transform{self.player_transform, self.enemy_transform};
-        var sprites = [_]SpriteRenderer{self.player_sprite, self.enemy_sprite};
+        // Render background, player, and enemy sprites with camera
+        // Background first (drawn behind everything)
+        var transforms = [_]Transform{self.background_transform, self.player_transform, self.enemy_transform};
+        var sprites = [_]SpriteRenderer{self.background_sprite, self.player_sprite, self.enemy_sprite};
         
-        try renderer.render(&transforms, &sprites);
+        try renderer.render(&transforms, &sprites, &self.camera);
     }
 };
 
