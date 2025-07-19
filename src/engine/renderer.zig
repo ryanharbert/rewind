@@ -113,12 +113,12 @@ pub const Renderer = struct {
                 .{ -half_width, half_height },  // Top left
             };
             
-            // UV coordinates for each corner
+            // UV coordinates for each corner (flipped vertically to correct image orientation)
             const uvs = [_][2]f32{
-                .{ 1.0, 1.0 }, // Top right
-                .{ 1.0, 0.0 }, // Bottom right
-                .{ 0.0, 0.0 }, // Bottom left
-                .{ 0.0, 1.0 }, // Top left
+                .{ 1.0, 0.0 }, // Top right (was 1.0, 1.0)
+                .{ 1.0, 1.0 }, // Bottom right (was 1.0, 0.0)
+                .{ 0.0, 1.0 }, // Bottom left (was 0.0, 0.0)
+                .{ 0.0, 0.0 }, // Top left (was 0.0, 1.0)
             };
             
             // Apply rotation and translation to each corner

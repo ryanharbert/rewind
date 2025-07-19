@@ -119,8 +119,8 @@ pub fn main() !void {
     var bundle = AssetBundle.init(allocator);
     defer bundle.deinit();
 
-    // For now, create a procedural texture - we'll add real sprites later
-    const test_texture = try Texture.createTestSprite();
+    // Load PNG texture instead of procedural
+    const test_texture = try Texture.init("assets/textures/test-player.png");
     defer test_texture.deinit();
     try bundle.textures.put(try allocator.dupe(u8, "test_sprite"), test_texture);
 

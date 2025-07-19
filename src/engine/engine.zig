@@ -96,6 +96,10 @@ pub const Engine = struct {
             return error.GLADInitFailed;
         }
         
+        // Enable alpha blending for transparency
+        c.glEnable(c.GL_BLEND);
+        c.glBlendFunc(c.GL_SRC_ALPHA, c.GL_ONE_MINUS_SRC_ALPHA);
+        
         const asset_bundle = try allocator.create(AssetBundle);
         asset_bundle.* = AssetBundle.init(allocator);
         const renderer = try Renderer.init(allocator, asset_bundle, config.vertex_shader, config.fragment_shader);

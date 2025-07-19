@@ -18,8 +18,8 @@ const SimpleGameplayTest = struct {
     sprite: SpriteRenderer,
     
     pub fn init(allocator: std.mem.Allocator, engine: *Engine) !SimpleGameplayTest {
-        // Create the test sprite exactly like render-test does
-        const test_texture = try Texture.createTestSprite();
+        // Load the player PNG sprite
+        const test_texture = try Texture.init("assets/textures/test-player.png");
         try engine.getAssetBundle().textures.put(try allocator.dupe(u8, "test_sprite"), test_texture);
         
         // Create one sprite in the center
