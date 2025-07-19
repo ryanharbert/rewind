@@ -58,6 +58,11 @@ pub const Shader = struct {
         c.glUniform1i(location, value);
     }
     
+    pub fn setFloat(self: *const Shader, name: []const u8, value: f32) void {
+        const location = c.glGetUniformLocation(self.id, name.ptr);
+        c.glUniform1f(location, value);
+    }
+    
     pub fn setVec2(self: *const Shader, name: []const u8, x: f32, y: f32) void {
         const location = c.glGetUniformLocation(self.id, name.ptr);
         c.glUniform2f(location, x, y);

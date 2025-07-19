@@ -155,6 +155,14 @@ pub const Renderer = struct {
 
         self.shader.use();
         self.shader.setInt("ourTexture", 0);
+        
+        // Get viewport dimensions and calculate aspect ratio
+        var viewport: [4]c_int = undefined;
+        c.glGetIntegerv(c.GL_VIEWPORT, &viewport);
+        const width = @as(f32, @floatFromInt(viewport[2]));
+        const height = @as(f32, @floatFromInt(viewport[3]));
+        const aspect_ratio = width / height;
+        self.shader.setFloat("aspectRatio", aspect_ratio);
 
         c.glBindVertexArray(self.VAO);
         c.glDrawElements(c.GL_TRIANGLES, @intCast(sprite_count * INDICES_PER_SPRITE), c.GL_UNSIGNED_INT, null);
