@@ -13,26 +13,42 @@ const Texture = @import("engine").Texture;
 const SimpleGameplayTest = struct {
     allocator: std.mem.Allocator,
     
-    // Just one sprite in the center
-    transform: Transform,
-    sprite: SpriteRenderer,
+    // Player
+    player_transform: Transform,
+    player_sprite: SpriteRenderer,
+    
+    // Enemy
+    enemy_transform: Transform,
+    enemy_sprite: SpriteRenderer,
     
     pub fn init(allocator: std.mem.Allocator, engine: *Engine) !SimpleGameplayTest {
-        // Load the player PNG sprite
-        const test_texture = try Texture.init("assets/textures/test-player.png");
-        try engine.getAssetBundle().textures.put(try allocator.dupe(u8, "test_sprite"), test_texture);
+        // Load player texture
+        const player_texture = try Texture.init("assets/textures/player.png");
+        try engine.getAssetBundle().textures.put(try allocator.dupe(u8, "player"), player_texture);
         
-        // Create one sprite in the center
-        var transform = Transform.init(0.0, 0.0);
-        transform.setScale(0.5, 0.5);
-        const sprite = SpriteRenderer.init("test_sprite");
+        // Load enemy texture
+        const enemy_texture = try Texture.init("assets/textures/enemy.png");
+        try engine.getAssetBundle().textures.put(try allocator.dupe(u8, "enemy"), enemy_texture);
         
-        std.debug.print("Created test sprite with texture ID: {}\n", .{test_texture.id});
+        // Create player in center
+        var player_transform = Transform.init(0.0, 0.0);
+        player_transform.setScale(0.5, 0.5);
+        const player_sprite = SpriteRenderer.init("player");
+        
+        // Create enemy at a different position
+        var enemy_transform = Transform.init(1.0, 1.0);
+        enemy_transform.setScale(0.4, 0.4);
+        const enemy_sprite = SpriteRenderer.init("enemy");
+        
+        std.debug.print("Created player with texture ID: {}\n", .{player_texture.id});
+        std.debug.print("Created enemy with texture ID: {}\n", .{enemy_texture.id});
         
         return SimpleGameplayTest{
             .allocator = allocator,
-            .transform = transform,
-            .sprite = sprite,
+            .player_transform = player_transform,
+            .player_sprite = player_sprite,
+            .enemy_transform = enemy_transform,
+            .enemy_sprite = enemy_sprite,
         };
     }
     
@@ -41,19 +57,19 @@ const SimpleGameplayTest = struct {
     }
     
     pub fn update(self: *SimpleGameplayTest, input: *const Input, delta_time: f32) void {
-        // Tank-style movement: left/right to rotate, up/down to move forward/backward
+        // Player controls - Tank-style movement: left/right to rotate, up/down to move forward/backward
         const rotation_speed = 3.0; // radians per second
         const move_speed = 2.0;
         
-        // Rotation
+        // Player rotation
         if (input.isKeyDown(.a) or input.isKeyDown(.left)) {
-            self.transform.rotate(-rotation_speed * delta_time);
+            self.player_transform.rotate(-rotation_speed * delta_time);
         }
         if (input.isKeyDown(.d) or input.isKeyDown(.right)) {
-            self.transform.rotate(rotation_speed * delta_time);
+            self.player_transform.rotate(rotation_speed * delta_time);
         }
         
-        // Forward/backward movement based on current rotation
+        // Player forward/backward movement based on current rotation
         var forward_input: f32 = 0.0;
         if (input.isKeyDown(.w) or input.isKeyDown(.up)) {
             forward_input = 1.0;
@@ -64,21 +80,50 @@ const SimpleGameplayTest = struct {
         
         if (forward_input != 0.0) {
             // Calculate forward direction based on rotation
-            const forward_x = @sin(self.transform.rotation);
-            const forward_y = @cos(self.transform.rotation);
+            const forward_x = @sin(self.player_transform.rotation);
+            const forward_y = @cos(self.player_transform.rotation);
             
             const move_distance = forward_input * move_speed * delta_time;
-            self.transform.translate(
+            self.player_transform.translate(
                 forward_x * move_distance,
                 forward_y * move_distance
             );
         }
+        
+        // Enemy AI - follow the player
+        const enemy_speed = 1.0; // Slower than player
+        const stop_distance = 0.3; // Stop following when this close
+        
+        const player_pos = self.player_transform.position.toFloat();
+        const enemy_pos = self.enemy_transform.position.toFloat();
+        
+        // Calculate distance to player
+        const dx = player_pos.x - enemy_pos.x;
+        const dy = player_pos.y - enemy_pos.y;
+        const distance = @sqrt(dx * dx + dy * dy);
+        
+        // Only move if not too close to player
+        if (distance > stop_distance) {
+            // Normalize direction vector
+            const dir_x = dx / distance;
+            const dir_y = dy / distance;
+            
+            // Move towards player
+            const move_distance = enemy_speed * delta_time;
+            self.enemy_transform.translate(
+                dir_x * move_distance,
+                dir_y * move_distance
+            );
+            
+            // Face the player (optional - makes enemy point towards player)
+            self.enemy_transform.rotation = std.math.atan2(dx, dy);
+        }
     }
     
     pub fn render(self: *SimpleGameplayTest, renderer: *Renderer) !void {
-        // Render just one sprite
-        var transforms = [_]Transform{self.transform};
-        var sprites = [_]SpriteRenderer{self.sprite};
+        // Render both player and enemy sprites
+        var transforms = [_]Transform{self.player_transform, self.enemy_transform};
+        var sprites = [_]SpriteRenderer{self.player_sprite, self.enemy_sprite};
         
         try renderer.render(&transforms, &sprites);
     }
