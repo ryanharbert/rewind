@@ -13,6 +13,7 @@ const AssetBundle = @import("engine").AssetBundle;
 const Transform = @import("engine").Transform;
 const SpriteRenderer = @import("engine").SpriteRenderer;
 const Renderer = @import("engine").Renderer;
+const InstancedRenderer = @import("engine").InstancedRenderer;
 
 const vertex_shader_source =
     \\#version 330 core
@@ -120,12 +121,12 @@ pub fn main() !void {
     defer bundle.deinit();
 
     // Load PNG texture instead of procedural
-    const test_texture = try Texture.init("assets/textures/test-player.png");
+    const test_texture = try Texture.init("assets/textures/player.png");
     defer test_texture.deinit();
     try bundle.textures.put(try allocator.dupe(u8, "test_sprite"), test_texture);
 
-    // Create renderer
-    var renderer = try Renderer.init(allocator, &bundle, vertex_shader_source, fragment_shader_source);
+    // Create instanced renderer for better performance
+    var renderer = try InstancedRenderer.init(allocator, &bundle);
     defer renderer.deinit();
 
     // Initialize input system
@@ -203,6 +204,17 @@ pub fn main() !void {
         const Engine = @import("engine");
         const default_camera = Engine.Camera.init(0.0, 0.0, 1.0);
         try renderer.render(transforms, sprite_renderers, &default_camera);
+
+        // Print performance stats periodically (back to console logging)
+        const stats = renderer.getPerformanceStats();
+        if (@mod(profiler.frame_count, 300) == 0 and profiler.frame_count > 0) { // Every ~5 seconds
+            std.debug.print("\n=== INSTANCED RENDERER PERFORMANCE ===\n", .{});
+            std.debug.print("FPS: {d:.1} | Frame Time: {d:.2}ms\n", .{profiler.fps, profiler.frame_time});
+            std.debug.print("Draw calls: {} (vs {} with old renderer)\n", .{stats.draw_calls, NUM_SPRITES});
+            std.debug.print("Instances rendered: {}\n", .{stats.instances_rendered});
+            std.debug.print("Efficiency: {d:.1}x fewer draw calls\n", .{@as(f32, @floatFromInt(NUM_SPRITES)) / @as(f32, @floatFromInt(stats.draw_calls))});
+            std.debug.print("======================================\n", .{});
+        }
 
         c.glfwSwapBuffers(window);
     }

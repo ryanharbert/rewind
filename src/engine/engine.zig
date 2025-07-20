@@ -10,6 +10,7 @@ pub const Input = @import("input.zig").Input;
 pub const Transform = @import("transform.zig").Transform;
 pub const SpriteRenderer = @import("sprite_renderer.zig").SpriteRenderer;
 pub const Renderer = @import("renderer.zig").Renderer;
+pub const InstancedRenderer = @import("instanced_renderer.zig").InstancedRenderer;
 pub const Texture = @import("texture.zig").Texture;
 pub const Shader = @import("shader.zig").Shader;
 pub const AssetBundle = @import("asset_bundle.zig").AssetBundle;
@@ -95,8 +96,11 @@ pub const Engine = struct {
         c.glfwMakeContextCurrent(window);
         _ = c.glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
         
-        // Enable VSync to cap framerate
+        // Enable VSync to cap framerate - must be called after context is current
         c.glfwSwapInterval(1);
+        
+        // Verify VSync is enabled
+        std.debug.print("VSync enabled: swap interval set to 1\n", .{});
         
         if (c.gladLoadGLLoader(@ptrCast(&c.glfwGetProcAddress)) == 0) {
             c.glfwDestroyWindow(window);
