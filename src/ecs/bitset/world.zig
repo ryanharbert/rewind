@@ -13,6 +13,8 @@ pub const World = struct {
     next_entity_id: EntityID,
     entity_count: u32,
     
+    // Simple and fast - no extra complexity needed
+    
     // Component bitsets - which entities have which components
     transform_entities: std.bit_set.IntegerBitSet(MAX_ENTITIES),
     physics_entities: std.bit_set.IntegerBitSet(MAX_ENTITIES),

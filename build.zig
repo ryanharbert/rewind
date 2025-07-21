@@ -180,7 +180,6 @@ pub fn build(b: *std.Build) void {
     });
     ecs_module.addOptions("build_options", build_options);
     ecs_test_exe.root_module.addImport("ecs", ecs_module);
-    
     ecs_test_exe.root_module.addOptions("build_options", build_options);
     ecs_test_exe.linkLibC();
     

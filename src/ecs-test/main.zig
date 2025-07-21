@@ -11,6 +11,9 @@ pub fn main() !void {
     // Test the current ECS implementation
     try ecs.runCompatibilityTest(allocator);
     
+    std.debug.print("\n=== Original Simple Test (100 iterations) ===\n", .{});
+    try originalSimpleTest(allocator);
+    
     std.debug.print("\n=== Performance Benchmark ===\n", .{});
     try benchmarkECS(allocator);
     
@@ -18,13 +21,13 @@ pub fn main() !void {
     try testQueries(allocator);
 }
 
-fn benchmarkECS(allocator: std.mem.Allocator) !void {
+fn originalSimpleTest(allocator: std.mem.Allocator) !void {
     var world = ecs.World.init(allocator);
     defer world.deinit();
     
     const start_time = std.time.milliTimestamp();
     
-    // Create 1000 entities with various components
+    // Create 1000 entities (same as before)
     std.debug.print("Creating 1000 entities...\n", .{});
     for (0..1000) |i| {
         const entity = try world.createEntity();
@@ -41,26 +44,23 @@ fn benchmarkECS(allocator: std.mem.Allocator) !void {
     
     const setup_time = std.time.milliTimestamp() - start_time;
     
-    // Run queries - measure init and iteration separately
+    // Run queries - 100 iterations like the original test
     var total_init_time: i64 = 0;
     var total_iteration_time: i64 = 0;
     var query_count: u32 = 0;
     
-    for (0..100) |_| {
-        // Measure query initialization
+    for (0..100) |_| {  // 100 iterations - same as original
         const init_start = std.time.milliTimestamp();
         var query = world.query(.{ ecs.Transform, ecs.Physics });
         const init_end = std.time.milliTimestamp();
         total_init_time += (init_end - init_start);
         
         defer {
-            // Only deinit for sparse set implementation
             if (@hasDecl(@TypeOf(query), "deinit")) {
                 query.deinit();
             }
         }
         
-        // Measure query iteration
         const iter_start = std.time.milliTimestamp();
         var count: u32 = 0;
         while (query.next()) |entity| {
@@ -69,8 +69,7 @@ fn benchmarkECS(allocator: std.mem.Allocator) !void {
         }
         const iter_end = std.time.milliTimestamp();
         total_iteration_time += (iter_end - iter_start);
-        
-        query_count = count; // Save last count
+        query_count = count;
     }
     
     const query_time = total_init_time + total_iteration_time;
@@ -80,6 +79,160 @@ fn benchmarkECS(allocator: std.mem.Allocator) !void {
     std.debug.print("Query Iteration (100x): {}ms\n", .{total_iteration_time});
     std.debug.print("Total Queries (100x): {}ms\n", .{query_time});
     std.debug.print("Entities with Transform+Physics: {}\n", .{query_count});
+}
+
+fn benchmarkECS(allocator: std.mem.Allocator) !void {
+    std.debug.print("\n=== COMPREHENSIVE ECS BENCHMARK ===\n", .{});
+    
+    // Test different entity counts up to very large scales
+    const entity_counts = [_]u32{ 100, 500, 1000, 2000, 4000, 8000, 16000 };
+    
+    for (entity_counts) |entity_count| {
+        // Skip very large entity counts for bitset ECS (simplify for now)
+        if (entity_count > 4096) {
+            std.debug.print("Skipping {} entities (exceeds bitset limit)\n", .{entity_count});
+            continue;
+        }
+        
+        std.debug.print("\n--- Testing with {} entities ---\n", .{entity_count});
+        
+        var world = ecs.World.init(allocator);
+        defer world.deinit();
+        
+        const start_time = std.time.milliTimestamp();
+        
+        // Create entities with different component distributions
+        for (0..entity_count) |i| {
+            const entity = try world.createEntity();
+            try world.addComponent(entity, ecs.Transform{ .position = .{ .x = @floatFromInt(i), .y = @floatFromInt(i) } });
+            
+            if (i % 2 == 0) {
+                try world.addComponent(entity, ecs.Physics{ .velocity = .{ .x = 1.0, .y = 0.0 } });
+            }
+            
+            if (i % 3 == 0) {
+                try world.addComponent(entity, ecs.Sprite{ .texture_name = "test" });
+            }
+        }
+        
+        const setup_time = std.time.milliTimestamp() - start_time;
+        
+        // Adjust iterations based on entity count to keep tests reasonable
+        const iterations: u32 = if (entity_count <= 1000) 1000 else if (entity_count <= 4000) 500 else 100;
+        
+        // Test Transform+Physics query (50% selectivity)
+        try testTransformPhysicsQuery(&world, entity_count, iterations);
+        
+        // Test Transform+Sprite query (33% selectivity)  
+        try testTransformSpriteQuery(&world, entity_count, iterations);
+        
+        // Test Transform+Physics+Sprite query (16% selectivity)
+        try testAllComponentsQuery(&world, entity_count, iterations);
+        
+        std.debug.print("Setup time: {}ms\n", .{setup_time});
+    }
+}
+
+fn testTransformPhysicsQuery(world: *ecs.World, entity_count: u32, iterations: u32) !void {
+    var total_init_time: i64 = 0;
+    var total_iteration_time: i64 = 0;
+    var query_count: u32 = 0;
+    
+    for (0..iterations) |_| {
+        const init_start = std.time.milliTimestamp();
+        var query = world.query(.{ ecs.Transform, ecs.Physics });
+        const init_end = std.time.milliTimestamp();
+        total_init_time += (init_end - init_start);
+        
+        defer {
+            if (@hasDecl(@TypeOf(query), "deinit")) {
+                query.deinit();
+            }
+        }
+        
+        const iter_start = std.time.milliTimestamp();
+        var count: u32 = 0;
+        while (query.next()) |entity| {
+            _ = entity;
+            count += 1;
+        }
+        const iter_end = std.time.milliTimestamp();
+        total_iteration_time += (iter_end - iter_start);
+        query_count = count;
+    }
+    
+    const total_time = total_init_time + total_iteration_time;
+    const selectivity = (@as(f32, @floatFromInt(query_count)) / @as(f32, @floatFromInt(entity_count))) * 100.0;
+    std.debug.print("Transform+Physics ({}x): Init={}ms, Iter={}ms, Total={}ms, Matches={} ({d:.1}%)\n", 
+        .{ iterations, total_init_time, total_iteration_time, total_time, query_count, selectivity });
+}
+
+fn testTransformSpriteQuery(world: *ecs.World, entity_count: u32, iterations: u32) !void {
+    var total_init_time: i64 = 0;
+    var total_iteration_time: i64 = 0;
+    var query_count: u32 = 0;
+    
+    for (0..iterations) |_| {
+        const init_start = std.time.milliTimestamp();
+        var query = world.query(.{ ecs.Transform, ecs.Sprite });
+        const init_end = std.time.milliTimestamp();
+        total_init_time += (init_end - init_start);
+        
+        defer {
+            if (@hasDecl(@TypeOf(query), "deinit")) {
+                query.deinit();
+            }
+        }
+        
+        const iter_start = std.time.milliTimestamp();
+        var count: u32 = 0;
+        while (query.next()) |entity| {
+            _ = entity;
+            count += 1;
+        }
+        const iter_end = std.time.milliTimestamp();
+        total_iteration_time += (iter_end - iter_start);
+        query_count = count;
+    }
+    
+    const total_time = total_init_time + total_iteration_time;
+    const selectivity = (@as(f32, @floatFromInt(query_count)) / @as(f32, @floatFromInt(entity_count))) * 100.0;
+    std.debug.print("Transform+Sprite ({}x): Init={}ms, Iter={}ms, Total={}ms, Matches={} ({d:.1}%)\n", 
+        .{ iterations, total_init_time, total_iteration_time, total_time, query_count, selectivity });
+}
+
+fn testAllComponentsQuery(world: *ecs.World, entity_count: u32, iterations: u32) !void {
+    var total_init_time: i64 = 0;
+    var total_iteration_time: i64 = 0;
+    var query_count: u32 = 0;
+    
+    for (0..iterations) |_| {
+        const init_start = std.time.milliTimestamp();
+        var query = world.query(.{ ecs.Transform, ecs.Physics, ecs.Sprite });
+        const init_end = std.time.milliTimestamp();
+        total_init_time += (init_end - init_start);
+        
+        defer {
+            if (@hasDecl(@TypeOf(query), "deinit")) {
+                query.deinit();
+            }
+        }
+        
+        const iter_start = std.time.milliTimestamp();
+        var count: u32 = 0;
+        while (query.next()) |entity| {
+            _ = entity;
+            count += 1;
+        }
+        const iter_end = std.time.milliTimestamp();
+        total_iteration_time += (iter_end - iter_start);
+        query_count = count;
+    }
+    
+    const total_time = total_init_time + total_iteration_time;
+    const selectivity = (@as(f32, @floatFromInt(query_count)) / @as(f32, @floatFromInt(entity_count))) * 100.0;
+    std.debug.print("Transform+Physics+Sprite ({}x): Init={}ms, Iter={}ms, Total={}ms, Matches={} ({d:.1}%)\n", 
+        .{ iterations, total_init_time, total_iteration_time, total_time, query_count, selectivity });
 }
 
 fn testQueries(allocator: std.mem.Allocator) !void {
