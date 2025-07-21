@@ -19,6 +19,8 @@ pub const components = @import("components/mod.zig");
 pub const Transform = components.Transform;
 pub const Physics = components.Physics;
 pub const Sprite = components.Sprite;
+pub const Player = components.Player;
+pub const Enemy = components.Enemy;
 
 // Common EntityID type
 pub const EntityID = u32;

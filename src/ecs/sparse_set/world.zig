@@ -14,11 +14,15 @@ pub const World = struct {
     transforms: std.ArrayList(components.Transform),
     physics: std.ArrayList(components.Physics),
     sprites: std.ArrayList(components.Sprite),
+    players: std.ArrayList(components.Player),
+    enemies: std.ArrayList(components.Enemy),
     
     // Entity -> component index mappings (sparse sets)
     entity_to_transform: std.HashMap(EntityID, u32, std.hash_map.AutoContext(EntityID), 80),
     entity_to_physics: std.HashMap(EntityID, u32, std.hash_map.AutoContext(EntityID), 80),
     entity_to_sprite: std.HashMap(EntityID, u32, std.hash_map.AutoContext(EntityID), 80),
+    entity_to_player: std.HashMap(EntityID, u32, std.hash_map.AutoContext(EntityID), 80),
+    entity_to_enemy: std.HashMap(EntityID, u32, std.hash_map.AutoContext(EntityID), 80),
     
     // Component masks for fast queries
     component_masks: std.HashMap(EntityID, u64, std.hash_map.AutoContext(EntityID), 80),
@@ -32,10 +36,14 @@ pub const World = struct {
             .transforms = std.ArrayList(components.Transform).init(allocator),
             .physics = std.ArrayList(components.Physics).init(allocator),
             .sprites = std.ArrayList(components.Sprite).init(allocator),
+            .players = std.ArrayList(components.Player).init(allocator),
+            .enemies = std.ArrayList(components.Enemy).init(allocator),
             
             .entity_to_transform = std.HashMap(EntityID, u32, std.hash_map.AutoContext(EntityID), 80).init(allocator),
             .entity_to_physics = std.HashMap(EntityID, u32, std.hash_map.AutoContext(EntityID), 80).init(allocator),
             .entity_to_sprite = std.HashMap(EntityID, u32, std.hash_map.AutoContext(EntityID), 80).init(allocator),
+            .entity_to_player = std.HashMap(EntityID, u32, std.hash_map.AutoContext(EntityID), 80).init(allocator),
+            .entity_to_enemy = std.HashMap(EntityID, u32, std.hash_map.AutoContext(EntityID), 80).init(allocator),
             
             .component_masks = std.HashMap(EntityID, u64, std.hash_map.AutoContext(EntityID), 80).init(allocator),
         };
@@ -45,10 +53,14 @@ pub const World = struct {
         self.transforms.deinit();
         self.physics.deinit();
         self.sprites.deinit();
+        self.players.deinit();
+        self.enemies.deinit();
         
         self.entity_to_transform.deinit();
         self.entity_to_physics.deinit();
         self.entity_to_sprite.deinit();
+        self.entity_to_player.deinit();
+        self.entity_to_enemy.deinit();
         
         self.component_masks.deinit();
     }
@@ -71,6 +83,8 @@ pub const World = struct {
         self.removeComponent(entity, components.Transform);
         self.removeComponent(entity, components.Physics);
         self.removeComponent(entity, components.Sprite);
+        self.removeComponent(entity, components.Player);
+        self.removeComponent(entity, components.Enemy);
         
         _ = self.component_masks.remove(entity);
         self.entity_count -= 1;
@@ -115,6 +129,26 @@ pub const World = struct {
                 const current_mask = self.component_masks.get(entity) orelse 0;
                 try self.component_masks.put(entity, current_mask | components.componentBit(T));
             },
+            components.Player => {
+                if (self.entity_to_player.contains(entity)) return;
+                
+                const index = @as(u32, @intCast(self.players.items.len));
+                try self.players.append(component);
+                try self.entity_to_player.put(entity, index);
+                
+                const current_mask = self.component_masks.get(entity) orelse 0;
+                try self.component_masks.put(entity, current_mask | components.componentBit(T));
+            },
+            components.Enemy => {
+                if (self.entity_to_enemy.contains(entity)) return;
+                
+                const index = @as(u32, @intCast(self.enemies.items.len));
+                try self.enemies.append(component);
+                try self.entity_to_enemy.put(entity, index);
+                
+                const current_mask = self.component_masks.get(entity) orelse 0;
+                try self.component_masks.put(entity, current_mask | components.componentBit(T));
+            },
             else => @compileError("Unknown component type: " ++ @typeName(T)),
         }
     }
@@ -138,6 +172,18 @@ pub const World = struct {
             },
             components.Sprite => {
                 if (self.entity_to_sprite.remove(entity)) {
+                    const current_mask = self.component_masks.get(entity) orelse 0;
+                    _ = self.component_masks.put(entity, current_mask & ~components.componentBit(T)) catch {};
+                }
+            },
+            components.Player => {
+                if (self.entity_to_player.remove(entity)) {
+                    const current_mask = self.component_masks.get(entity) orelse 0;
+                    _ = self.component_masks.put(entity, current_mask & ~components.componentBit(T)) catch {};
+                }
+            },
+            components.Enemy => {
+                if (self.entity_to_enemy.remove(entity)) {
                     const current_mask = self.component_masks.get(entity) orelse 0;
                     _ = self.component_masks.put(entity, current_mask & ~components.componentBit(T)) catch {};
                 }
@@ -166,6 +212,14 @@ pub const World = struct {
             components.Sprite => {
                 const index = self.entity_to_sprite.get(entity) orelse return null;
                 return &self.sprites.items[index];
+            },
+            components.Player => {
+                const index = self.entity_to_player.get(entity) orelse return null;
+                return &self.players.items[index];
+            },
+            components.Enemy => {
+                const index = self.entity_to_enemy.get(entity) orelse return null;
+                return &self.enemies.items[index];
             },
             else => @compileError("Unknown component type: " ++ @typeName(T)),
         };

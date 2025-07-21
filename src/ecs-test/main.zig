@@ -17,6 +17,12 @@ pub fn main() !void {
     std.debug.print("\n=== Performance Benchmark ===\n", .{});
     try benchmarkECS(allocator);
     
+    std.debug.print("\n=== Realistic Game Scenarios ===\n", .{});
+    try benchmarkGameScenarios(allocator);
+    
+    std.debug.print("\n=== Multi-System Game Loop Test ===\n", .{});
+    try benchmarkMultiSystemGameLoop(allocator);
+    
     std.debug.print("\n=== Query Test ===\n", .{});
     try testQueries(allocator);
 }
@@ -117,8 +123,8 @@ fn benchmarkECS(allocator: std.mem.Allocator) !void {
         
         const setup_time = std.time.milliTimestamp() - start_time;
         
-        // Adjust iterations based on entity count to keep tests reasonable
-        const iterations: u32 = if (entity_count <= 1000) 1000 else if (entity_count <= 4000) 500 else 100;
+        // More iterations for accurate ReleaseFast benchmarking
+        const iterations: u32 = if (entity_count <= 1000) 5000 else if (entity_count <= 4000) 2000 else 500;
         
         // Test Transform+Physics query (50% selectivity)
         try testTransformPhysicsQuery(&world, entity_count, iterations);
@@ -297,4 +303,308 @@ fn testQueries(allocator: std.mem.Allocator) !void {
     while (all_query.next()) |entity| {
         std.debug.print("  Entity {}: has all three components\n", .{entity});
     }
+}
+
+fn benchmarkGameScenarios(allocator: std.mem.Allocator) !void {
+    // Scenario 1: Sparse Physics (10% physics density) - Many decorative items
+    std.debug.print("\n--- SCENARIO 1: Sparse Physics (10% density) ---\n", .{});
+    std.debug.print("Simulating: Many decorative items, few physics objects\n", .{});
+    try testSparsePhysics(allocator);
+    
+    // Scenario 2: Bullet Spike (100 base + 400 bullets)
+    std.debug.print("\n--- SCENARIO 2: Bullet Spike (100 base + 400 bullets) ---\n", .{});
+    std.debug.print("Simulating: Normal game + bullet hell moment\n", .{});
+    try testBulletSpike(allocator);
+    
+    // Scenario 3: Dense Physics (75% physics density) - Particle simulation
+    std.debug.print("\n--- SCENARIO 3: Dense Physics (75% density) ---\n", .{});
+    std.debug.print("Simulating: Particle system or physics-heavy scene\n", .{});
+    try testDensePhysics(allocator);
+}
+
+fn testSparsePhysics(allocator: std.mem.Allocator) !void {
+    // Test with 1000 entities but only 10% have physics (sparse)
+    var world = ecs.World.init(allocator);
+    defer world.deinit();
+    
+    const entity_count: u32 = 1000;
+    
+    // Create entities: All have Transform, only every 10th has Physics
+    for (0..entity_count) |i| {
+        const entity = try world.createEntity();
+        try world.addComponent(entity, ecs.Transform{ .position = .{ .x = @floatFromInt(i), .y = @floatFromInt(i) } });
+        
+        if (i % 10 == 0) { // Only 10% have physics
+            try world.addComponent(entity, ecs.Physics{ .velocity = .{ .x = 1.0, .y = 0.0 } });
+        }
+        
+        if (i % 3 == 0) { // Normal sprite distribution
+            try world.addComponent(entity, ecs.Sprite{ .texture_name = "decoration" });
+        }
+    }
+    
+    // Run physics queries
+    try testTransformPhysicsQuery(&world, entity_count, 3000);
+}
+
+fn testBulletSpike(allocator: std.mem.Allocator) !void {
+    // 100 normal game entities + 400 bullets (all physics)
+    var world = ecs.World.init(allocator);
+    defer world.deinit();
+    
+    // First 100: Normal game entities (50% physics)
+    for (0..100) |i| {
+        const entity = try world.createEntity();
+        try world.addComponent(entity, ecs.Transform{ .position = .{ .x = @floatFromInt(i), .y = @floatFromInt(i) } });
+        
+        if (i % 2 == 0) { // 50% have physics
+            try world.addComponent(entity, ecs.Physics{ .velocity = .{ .x = 1.0, .y = 0.0 } });
+        }
+        
+        if (i % 3 == 0) {
+            try world.addComponent(entity, ecs.Sprite{ .texture_name = "gameobject" });
+        }
+    }
+    
+    // Next 400: Bullets (all have physics)
+    for (100..500) |i| {
+        const entity = try world.createEntity();
+        try world.addComponent(entity, ecs.Transform{ .position = .{ .x = @floatFromInt(i), .y = @floatFromInt(i) } });
+        try world.addComponent(entity, ecs.Physics{ .velocity = .{ .x = 10.0, .y = 5.0 } }); // All bullets have physics
+        try world.addComponent(entity, ecs.Sprite{ .texture_name = "bullet" }); // All bullets have sprites
+    }
+    
+    std.debug.print("Total entities: 500 (100 game objects + 400 bullets)\n", .{});
+    try testTransformPhysicsQuery(&world, 500, 3000);
+}
+
+fn testDensePhysics(allocator: std.mem.Allocator) !void {
+    // Test with 1000 entities but 75% have physics (particle system)
+    var world = ecs.World.init(allocator);
+    defer world.deinit();
+    
+    const entity_count: u32 = 1000;
+    
+    // Create entities: All have Transform, 75% have Physics
+    for (0..entity_count) |i| {
+        const entity = try world.createEntity();
+        try world.addComponent(entity, ecs.Transform{ .position = .{ .x = @floatFromInt(i), .y = @floatFromInt(i) } });
+        
+        if (i % 4 != 0) { // 75% have physics (skip every 4th)
+            try world.addComponent(entity, ecs.Physics{ .velocity = .{ .x = 1.0, .y = 0.0 } });
+        }
+        
+        if (i % 5 == 0) { // Fewer sprites for particles
+            try world.addComponent(entity, ecs.Sprite{ .texture_name = "particle" });
+        }
+    }
+    
+    // Run physics queries
+    try testTransformPhysicsQuery(&world, entity_count, 3000);
+}
+
+fn benchmarkMultiSystemGameLoop(allocator: std.mem.Allocator) !void {
+    // Test multiple scales for comprehensive analysis
+    const scales = [_]u32{ 1000, 2000, 4000 };
+    
+    for (scales) |entity_count| {
+        std.debug.print("\n=== Testing realistic game loop with multiple systems on {} entities ===\n", .{entity_count});
+        try testGameLoopAtScale(allocator, entity_count);
+    }
+}
+
+fn testGameLoopAtScale(allocator: std.mem.Allocator, entity_count: u32) !void {
+    var world = ecs.World.init(allocator);
+    defer world.deinit();
+    std.debug.print("Creating mixed entity distribution:\n", .{});
+    
+    // Create realistic mixed entity distribution
+    for (0..entity_count) |i| {
+        const entity = try world.createEntity();
+        
+        // All entities have Transform (position in world)
+        try world.addComponent(entity, ecs.Transform{ .position = .{ .x = @floatFromInt(i), .y = @floatFromInt(i % 100) } });
+        
+        // 50% have Physics (moving objects: players, bullets, physics objects)
+        if (i % 2 == 0) {
+            try world.addComponent(entity, ecs.Physics{ .velocity = .{ .x = 1.0, .y = 0.5 } });
+        }
+        
+        // 33% have Sprite (visible objects: not all entities are rendered)
+        if (i % 3 == 0) {
+            const sprite_type = if (i < 100) "player" else if (i < 300) "bullet" else if (i < 600) "enemy" else "decoration";
+            try world.addComponent(entity, ecs.Sprite{ .texture_name = sprite_type });
+        }
+    }
+    
+    const physics_count = entity_count / 2;
+    const sprite_count = entity_count / 3;
+    std.debug.print("- {} entities with Transform (100%)\n", .{entity_count});
+    std.debug.print("- {} entities with Physics (50%)\n", .{physics_count});
+    std.debug.print("- {} entities with Sprite (33%)\n", .{sprite_count});
+    
+    // Now simulate realistic game systems
+    const iterations: u32 = 1000; // Simulate 1000 game frames
+    
+    std.debug.print("\nSimulating {} game loop iterations with multiple systems:\n", .{iterations});
+    
+    // System 1: Ability System (queries entities with specific components)
+    std.debug.print("1. Ability System (Transform + Sprite for ability targeting)\n", .{});
+    try testAbilitySystem(&world, iterations);
+    
+    // System 2: Bullet Movement (Transform only - all bullets move)
+    std.debug.print("2. Bullet Movement System (Transform only for position updates)\n", .{});
+    try testBulletMovementSystem(&world, iterations);
+    
+    // System 3: Physics System (Physics + Transform - the core 50% physics entities)
+    std.debug.print("3. Physics System (Physics + Transform for 50% of entities)\n", .{});
+    try testPhysicsSystemCore(&world, iterations);
+    
+    // System 4: Navigation System (Physics for pathfinding, some have sprites for rendering)
+    std.debug.print("4. Navigation System (Physics for movement decisions)\n", .{});
+    try testNavigationSystem(&world, iterations);
+    
+    // System 5: AI System (complex combinations)
+    std.debug.print("5. AI System (Transform + Physics + Sprite combinations)\n", .{});
+    try testAISystem(&world, iterations);
+}
+
+fn testAbilitySystem(world: *ecs.World, iterations: u32) !void {
+    var total_time: i64 = 0;
+    var entity_count: u32 = 0;
+    
+    for (0..iterations) |_| {
+        const start_time = std.time.milliTimestamp();
+        
+        var query = world.query(.{ ecs.Transform, ecs.Sprite }); // Ability targeting needs visible entities
+        defer {
+            if (@hasDecl(@TypeOf(query), "deinit")) {
+                query.deinit();
+            }
+        }
+        
+        var count: u32 = 0;
+        while (query.next()) |entity| {
+            _ = entity; // Simulate ability logic
+            count += 1;
+        }
+        entity_count = count;
+        
+        const end_time = std.time.milliTimestamp();
+        total_time += (end_time - start_time);
+    }
+    
+    std.debug.print("   {}x queries: {}ms total, {} entities per query\n", .{ iterations, total_time, entity_count });
+}
+
+fn testBulletMovementSystem(world: *ecs.World, iterations: u32) !void {
+    var total_time: i64 = 0;
+    var entity_count: u32 = 0;
+    
+    for (0..iterations) |_| {
+        const start_time = std.time.milliTimestamp();
+        
+        var query = world.query(.{ecs.Transform}); // All entities need position updates
+        defer {
+            if (@hasDecl(@TypeOf(query), "deinit")) {
+                query.deinit();
+            }
+        }
+        
+        var count: u32 = 0;
+        while (query.next()) |entity| {
+            _ = entity; // Simulate transform update
+            count += 1;
+        }
+        entity_count = count;
+        
+        const end_time = std.time.milliTimestamp();
+        total_time += (end_time - start_time);
+    }
+    
+    std.debug.print("   {}x queries: {}ms total, {} entities per query\n", .{ iterations, total_time, entity_count });
+}
+
+fn testPhysicsSystemCore(world: *ecs.World, iterations: u32) !void {
+    var total_time: i64 = 0;
+    var entity_count: u32 = 0;
+    
+    for (0..iterations) |_| {
+        const start_time = std.time.milliTimestamp();
+        
+        var query = world.query(.{ ecs.Transform, ecs.Physics }); // Core physics entities
+        defer {
+            if (@hasDecl(@TypeOf(query), "deinit")) {
+                query.deinit();
+            }
+        }
+        
+        var count: u32 = 0;
+        while (query.next()) |entity| {
+            _ = entity; // Simulate physics calculation
+            count += 1;
+        }
+        entity_count = count;
+        
+        const end_time = std.time.milliTimestamp();
+        total_time += (end_time - start_time);
+    }
+    
+    std.debug.print("   {}x queries: {}ms total, {} entities per query\n", .{ iterations, total_time, entity_count });
+}
+
+fn testNavigationSystem(world: *ecs.World, iterations: u32) !void {
+    var total_time: i64 = 0;
+    var entity_count: u32 = 0;
+    
+    for (0..iterations) |_| {
+        const start_time = std.time.milliTimestamp();
+        
+        var query = world.query(.{ecs.Physics}); // Navigation uses physics entities for pathfinding
+        defer {
+            if (@hasDecl(@TypeOf(query), "deinit")) {
+                query.deinit();
+            }
+        }
+        
+        var count: u32 = 0;
+        while (query.next()) |entity| {
+            _ = entity; // Simulate pathfinding logic
+            count += 1;
+        }
+        entity_count = count;
+        
+        const end_time = std.time.milliTimestamp();
+        total_time += (end_time - start_time);
+    }
+    
+    std.debug.print("   {}x queries: {}ms total, {} entities per query\n", .{ iterations, total_time, entity_count });
+}
+
+fn testAISystem(world: *ecs.World, iterations: u32) !void {
+    var total_time: i64 = 0;
+    var entity_count: u32 = 0;
+    
+    for (0..iterations) |_| {
+        const start_time = std.time.milliTimestamp();
+        
+        var query = world.query(.{ ecs.Transform, ecs.Physics, ecs.Sprite }); // AI needs all three for decision making
+        defer {
+            if (@hasDecl(@TypeOf(query), "deinit")) {
+                query.deinit();
+            }
+        }
+        
+        var count: u32 = 0;
+        while (query.next()) |entity| {
+            _ = entity; // Simulate AI decision logic
+            count += 1;
+        }
+        entity_count = count;
+        
+        const end_time = std.time.milliTimestamp();
+        total_time += (end_time - start_time);
+    }
+    
+    std.debug.print("   {}x queries: {}ms total, {} entities per query\n", .{ iterations, total_time, entity_count });
 }
