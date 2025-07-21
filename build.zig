@@ -193,6 +193,55 @@ pub fn build(b: *std.Build) void {
     const ecs_test_run_step = b.step("ecs-test", "Run ECS implementation tests");
     ecs_test_run_step.dependOn(&ecs_test_run_cmd.step);
 
+    // Gameplay Test 2 - ECS Systems Demo
+    const gameplay_test2_exe = b.addExecutable(.{
+        .name = "gameplay-test-2",
+        .root_source_file = b.path("src/gameplay-test-2/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    
+    // Add both engine and ECS modules to gameplay-test-2
+    gameplay_test2_exe.root_module.addImport("engine", engine_module);
+    gameplay_test2_exe.root_module.addImport("ecs", ecs_module);
+    gameplay_test2_exe.root_module.addOptions("build_options", build_options);
+
+    // Add same libraries as main exe
+    gameplay_test2_exe.addIncludePath(b.path("libs/glfw/glfw-3.4.bin.WIN64/include"));
+    gameplay_test2_exe.addObjectFile(b.path("libs/glfw/glfw-3.4.bin.WIN64/lib-mingw-w64/libglfw3.a"));
+    gameplay_test2_exe.linkSystemLibrary("opengl32");
+    gameplay_test2_exe.linkSystemLibrary("gdi32");
+    gameplay_test2_exe.linkSystemLibrary("user32");
+    gameplay_test2_exe.linkSystemLibrary("kernel32");
+
+    gameplay_test2_exe.addIncludePath(b.path("libs/glad/include"));
+    gameplay_test2_exe.addCSourceFile(.{ 
+        .file = b.path("libs/glad/src/glad.c"),
+        .flags = &.{"-std=c99"}
+    });
+
+    gameplay_test2_exe.addIncludePath(b.path("libs/stb"));
+    gameplay_test2_exe.addCSourceFile(.{ 
+        .file = b.path("libs/stb/stb_image.c"),
+        .flags = &.{"-std=c99"}
+    });
+    gameplay_test2_exe.addCSourceFile(.{ 
+        .file = b.path("libs/stb/stb_truetype.c"),
+        .flags = &.{"-std=c99"}
+    });
+
+    gameplay_test2_exe.linkLibC();
+
+    const gameplay_test2_run_cmd = b.addRunArtifact(gameplay_test2_exe);
+    gameplay_test2_run_cmd.step.dependOn(b.getInstallStep());
+
+    if (b.args) |args| {
+        gameplay_test2_run_cmd.addArgs(args);
+    }
+
+    const gameplay_test2_run_step = b.step("gameplay-test-2", "Run ECS systems gameplay demo");
+    gameplay_test2_run_step.dependOn(&gameplay_test2_run_cmd.step);
+
     // Tests
     const unit_tests = b.addTest(.{
         .root_source_file = b.path("src/engine/math_test.zig"),
