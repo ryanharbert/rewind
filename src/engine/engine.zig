@@ -15,6 +15,9 @@ pub const Texture = @import("texture.zig").Texture;
 pub const Shader = @import("shader.zig").Shader;
 pub const AssetBundle = @import("asset_bundle.zig").AssetBundle;
 pub const Camera = @import("camera.zig").Camera;
+pub const Font = @import("text.zig").Font;
+pub const Text = @import("text.zig").Text;
+pub const TextRenderer = @import("text_renderer.zig").TextRenderer;
 
 const default_vertex_shader =
     \\#version 330 core

@@ -14,6 +14,9 @@ const Transform = @import("engine").Transform;
 const SpriteRenderer = @import("engine").SpriteRenderer;
 const Renderer = @import("engine").Renderer;
 const InstancedRenderer = @import("engine").InstancedRenderer;
+const Font = @import("engine").Font;
+const Text = @import("engine").Text;
+const TextRenderer = @import("engine").TextRenderer;
 
 const vertex_shader_source =
     \\#version 330 core
@@ -124,10 +127,35 @@ pub fn main() !void {
     const test_texture = try Texture.init("assets/textures/player.png");
     defer test_texture.deinit();
     try bundle.textures.put(try allocator.dupe(u8, "test_sprite"), test_texture);
+    
+    // Try to load font - skip text rendering if font fails
+    var font_opt: ?Font = null;
+    var fps_text_opt: ?Text = null;
+    
+    if (Font.init(allocator, "assets/fonts/Roboto/static/Roboto-Regular.ttf")) |font| {
+        font_opt = font;
+        if (Text.init(allocator, &font, "FPS: 0.0", -0.95, 0.9, 48.0)) |fps_text| {
+            fps_text_opt = fps_text;
+            fps_text_opt.?.setColor(1.0, 1.0, 0.0); // Yellow text
+        } else |err| {
+            std.debug.print("Failed to create text: {}\n", .{err});
+        }
+    } else |err| {
+        std.debug.print("Failed to load font: {} - continuing without text\n", .{err});
+    }
+    
+    defer {
+        if (fps_text_opt) |*fps_text| fps_text.deinit();
+        if (font_opt) |*font| font.deinit();
+    }
 
     // Create instanced renderer for better performance
     var renderer = try InstancedRenderer.init(allocator, &bundle);
     defer renderer.deinit();
+    
+    // Create text renderer for FPS display
+    var text_renderer = try TextRenderer.init();
+    defer text_renderer.deinit();
 
     // Initialize input system
     var input = Input.init(@ptrCast(window));
@@ -204,6 +232,21 @@ pub fn main() !void {
         const Engine = @import("engine");
         const default_camera = Engine.Camera.init(0.0, 0.0, 1.0);
         try renderer.render(transforms, sprite_renderers, &default_camera);
+
+        // Update and render FPS text if available
+        if (font_opt != null and fps_text_opt != null and profiler.fps > 0) {
+            // Recreate fps_text with updated FPS value
+            fps_text_opt.?.deinit();
+            var fps_buffer: [32]u8 = undefined;
+            const fps_string = try std.fmt.bufPrint(fps_buffer[0..], "FPS: {d:.1}", .{profiler.fps});
+            fps_text_opt = try Text.init(allocator, &font_opt.?, fps_string, -0.95, 0.9, 48.0);
+            fps_text_opt.?.setColor(1.0, 1.0, 0.0); // Yellow text
+        }
+        
+        // Render the FPS text if available
+        if (fps_text_opt != null) {
+            text_renderer.renderText(&fps_text_opt.?);
+        }
 
         // Print performance stats periodically (back to console logging)
         const stats = renderer.getPerformanceStats();

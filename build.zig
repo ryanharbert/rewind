@@ -42,10 +42,14 @@ pub fn build(b: *std.Build) void {
         .flags = &.{"-std=c99"}
     });
 
-    // Add STB Image
+    // Add STB Image and TrueType
     exe.addIncludePath(b.path("libs/stb"));
     exe.addCSourceFile(.{ 
         .file = b.path("libs/stb/stb_image.c"),
+        .flags = &.{"-std=c99"}
+    });
+    exe.addCSourceFile(.{ 
+        .file = b.path("libs/stb/stb_truetype.c"),
         .flags = &.{"-std=c99"}
     });
 
@@ -93,6 +97,10 @@ pub fn build(b: *std.Build) void {
         .file = b.path("libs/stb/stb_image.c"),
         .flags = &.{"-std=c99"}
     });
+    gameplay_test_exe.addCSourceFile(.{ 
+        .file = b.path("libs/stb/stb_truetype.c"),
+        .flags = &.{"-std=c99"}
+    });
 
     gameplay_test_exe.linkLibC();
 
@@ -134,6 +142,10 @@ pub fn build(b: *std.Build) void {
     render_test_exe.addIncludePath(b.path("libs/stb"));
     render_test_exe.addCSourceFile(.{ 
         .file = b.path("libs/stb/stb_image.c"),
+        .flags = &.{"-std=c99"}
+    });
+    render_test_exe.addCSourceFile(.{ 
+        .file = b.path("libs/stb/stb_truetype.c"),
         .flags = &.{"-std=c99"}
     });
 
