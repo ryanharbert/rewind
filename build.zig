@@ -161,6 +161,39 @@ pub fn build(b: *std.Build) void {
     const render_test_run_step = b.step("render-test", "Run the render test");
     render_test_run_step.dependOn(&render_test_run_cmd.step);
 
+    // ECS Test
+    const use_bitset_ecs = b.option(bool, "bitset-ecs", "Use bitset ECS instead of sparse set ECS") orelse true;
+    
+    const build_options = b.addOptions();
+    build_options.addOption(bool, "use_bitset_ecs", use_bitset_ecs);
+    
+    const ecs_test_exe = b.addExecutable(.{
+        .name = "ecs-test",
+        .root_source_file = b.path("src/ecs-test/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    
+    // Add ECS module to ecs-test exe
+    const ecs_module = b.createModule(.{
+        .root_source_file = b.path("src/ecs/world.zig"),
+    });
+    ecs_module.addOptions("build_options", build_options);
+    ecs_test_exe.root_module.addImport("ecs", ecs_module);
+    
+    ecs_test_exe.root_module.addOptions("build_options", build_options);
+    ecs_test_exe.linkLibC();
+    
+    const ecs_test_run_cmd = b.addRunArtifact(ecs_test_exe);
+    ecs_test_run_cmd.step.dependOn(b.getInstallStep());
+    
+    if (b.args) |args| {
+        ecs_test_run_cmd.addArgs(args);
+    }
+    
+    const ecs_test_run_step = b.step("ecs-test", "Run ECS implementation tests");
+    ecs_test_run_step.dependOn(&ecs_test_run_cmd.step);
+
     // Tests
     const unit_tests = b.addTest(.{
         .root_source_file = b.path("src/engine/math_test.zig"),

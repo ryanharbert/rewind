@@ -206,8 +206,15 @@ pub const InstancedRenderer = struct {
                     batch.instances.items.ptr
                 );
 
+                // Enable alpha blending for transparency
+                c.glEnable(c.GL_BLEND);
+                c.glBlendFunc(c.GL_SRC_ALPHA, c.GL_ONE_MINUS_SRC_ALPHA);
+                
                 // Draw all instances in one call
                 c.glDrawElementsInstanced(c.GL_TRIANGLES, 6, c.GL_UNSIGNED_INT, null, @intCast(batch.instances.items.len));
+                
+                // Disable blending after drawing
+                c.glDisable(c.GL_BLEND);
 
                 self.draw_calls += 1;
                 self.instances_rendered += @intCast(batch.instances.items.len);
