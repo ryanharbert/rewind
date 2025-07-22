@@ -8,6 +8,4 @@ pub const Query = @import("query.zig").Query;
 pub const World = @import("world.zig").World;
 pub const validateComponents = @import("world.zig").validateComponents;
 
-pub const System = @import("system.zig").System;
-pub const SystemRegistry = @import("system.zig").SystemRegistry;
 pub const Simulation = @import("simulation.zig").Simulation;

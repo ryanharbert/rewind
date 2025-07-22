@@ -14,16 +14,17 @@ pub const RenderSprite = struct {
     scale: components.Vec2,
 };
 
-// Extract render data from ECS world for presentation
-pub fn extractRenderData(world: anytype, allocator: std.mem.Allocator) ![]RenderSprite {
+// Extract render data from ECS frame for presentation
+pub fn extractRenderData(frame: anytype, allocator: std.mem.Allocator) ![]RenderSprite {
     var sprites = std.ArrayList(RenderSprite).init(allocator);
     
-    var query = try world.query(&[_]type{ Transform, Sprite });
+    var query = try frame.query(&[_]type{ Transform, Sprite });
     defer query.deinit();
     
+    
     while (query.next()) |entity| {
-        const transform = world.getComponent(entity, Transform).?;
-        const sprite = world.getComponent(entity, Sprite).?;
+        const transform = frame.getComponent(entity, Transform).?;
+        const sprite = frame.getComponent(entity, Sprite).?;
         
         try sprites.append(RenderSprite{
             .texture_name = sprite.texture_name,

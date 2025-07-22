@@ -1,7 +1,7 @@
 const std = @import("std");
 const components = @import("components.zig");
 const InputCommand = @import("input.zig").InputCommand;
-const ecs = @import("ecs");
+const Frame = @import("ecs_setup.zig").Frame;
 
 // Game-specific types
 const Transform = components.Transform;
@@ -19,57 +19,48 @@ const WORLD_BOUNDS = struct {
     max_y: f32 = 4.0,
 }{};
 
-// Frame context for systems (generic)
-pub fn Frame(comptime WorldType: type) type {
-    return struct {
-        world: *WorldType,
-        dt: f32,
-        time: f64,
-        frame_number: u64,
-        input: []const InputCommand,
-    };
-}
+// Systems now work with concrete Frame type - no anytype!
 
 // Game Systems
 pub const BackgroundSystem = struct {
-    pub fn init(frame: anytype) !void {
+    pub fn init(frame: *Frame) !void {
         std.debug.print("Initializing BackgroundSystem - creating background entity\n", .{});
         
-        const background = try frame.world.createEntity();
-        try frame.world.addComponent(background, Transform{ 
+        const background = frame.createEntity();
+        frame.addComponent(background, Transform{ 
             .position = Vec2{ .x = 0.0, .y = 0.0 }, 
             .scale = Vec2{ .x = 8.0, .y = 8.0 } 
         });
-        try frame.world.addComponent(background, Sprite{ .texture_name = "background" });
+        frame.addComponent(background, Sprite{ .texture_name = "background" });
     }
     
-    pub fn update(frame: anytype) void {
+    pub fn update(frame: *Frame) void {
         _ = frame; // Background doesn't need updating
     }
 };
 
 pub const PlayerSystem = struct {
-    pub fn init(frame: anytype) !void {
+    pub fn init(frame: *Frame) !void {
         std.debug.print("Initializing PlayerSystem - creating player entity\n", .{});
         
-        const player = try frame.world.createEntity();
-        try frame.world.addComponent(player, Player{});
-        try frame.world.addComponent(player, Transform{ 
+        const player = frame.createEntity();
+        frame.addComponent(player, Player{});
+        frame.addComponent(player, Transform{ 
             .position = Vec2{ .x = 0.0, .y = 0.0 }, 
             .scale = Vec2{ .x = 0.5, .y = 0.5 } 
         });
-        try frame.world.addComponent(player, Physics{ .velocity = Vec2{ .x = 0.0, .y = 0.0 } });
-        try frame.world.addComponent(player, Sprite{ .texture_name = "player" });
+        frame.addComponent(player, Physics{ .velocity = Vec2{ .x = 0.0, .y = 0.0 } });
+        frame.addComponent(player, Sprite{ .texture_name = "player" });
     }
     
-    pub fn update(frame: anytype) void {
-        var query = frame.world.query(&[_]type{ Player, Transform, Physics }) catch return;
+    pub fn update(frame: *Frame) void {
+        var query = frame.query(&[_]type{ Player, Transform, Physics }) catch return;
         defer query.deinit();
         
         while (query.next()) |entity| {
-            const player = frame.world.getComponent(entity, Player).?;
-            const transform = frame.world.getComponent(entity, Transform).?;
-            const physics = frame.world.getComponent(entity, Physics).?;
+            const player = frame.getComponent(entity, Player).?;
+            const transform = frame.getComponent(entity, Transform).?;
+            const physics = frame.getComponent(entity, Physics).?;
             
             // Tank-style controls
             const rotation_speed = 3.0;
@@ -82,10 +73,10 @@ pub const PlayerSystem = struct {
             for (frame.input) |command| {
                 switch (command) {
                     .rotate_left => |rotate| {
-                        transform.rotation -= rotation_speed * rotate.strength * frame.dt;
+                        transform.rotation -= rotation_speed * rotate.strength * frame.deltaTime;
                     },
                     .rotate_right => |rotate| {
-                        transform.rotation += rotation_speed * rotate.strength * frame.dt;
+                        transform.rotation += rotation_speed * rotate.strength * frame.deltaTime;
                     },
                     .move_forward => |move| {
                         const forward_x = @sin(transform.rotation);
@@ -106,34 +97,34 @@ pub const PlayerSystem = struct {
 };
 
 pub const EnemySystem = struct {
-    pub fn init(frame: anytype) !void {
+    pub fn init(frame: *Frame) !void {
         std.debug.print("Initializing EnemySystem - creating enemy entities\n", .{});
         
         // Create enemy entities
         for (0..5) |i| {
-            const enemy = try frame.world.createEntity();
-            try frame.world.addComponent(enemy, Enemy{});
-            try frame.world.addComponent(enemy, Transform{ 
+            const enemy = frame.createEntity();
+            frame.addComponent(enemy, Enemy{});
+            frame.addComponent(enemy, Transform{ 
                 .position = Vec2{ 
                     .x = -2.0 + (@as(f32, @floatFromInt(i)) * 1.0), 
                     .y = 1.0 
                 },
                 .scale = Vec2{ .x = 0.4, .y = 0.4 }
             });
-            try frame.world.addComponent(enemy, Physics{ .velocity = Vec2{ .x = 0.0, .y = 0.0 } });
-            try frame.world.addComponent(enemy, Sprite{ .texture_name = "enemy" });
+            frame.addComponent(enemy, Physics{ .velocity = Vec2{ .x = 0.0, .y = 0.0 } });
+            frame.addComponent(enemy, Sprite{ .texture_name = "enemy" });
         }
     }
     
-    pub fn update(frame: anytype) void {
+    pub fn update(frame: *Frame) void {
         // Find player position
         var player_pos: ?Transform = null;
         {
-            var player_query = frame.world.query(&[_]type{ Player, Transform }) catch return;
+            var player_query = frame.query(&[_]type{ Player, Transform }) catch return;
             defer player_query.deinit();
             
             if (player_query.next()) |player_entity| {
-                if (frame.world.getComponent(player_entity, Transform)) |transform| {
+                if (frame.getComponent(player_entity, Transform)) |transform| {
                     player_pos = transform.*;
                 }
             }
@@ -142,13 +133,13 @@ pub const EnemySystem = struct {
         if (player_pos == null) return;
         
         // Update enemies to follow player
-        var query = frame.world.query(&[_]type{ Enemy, Transform, Physics }) catch return;
+        var query = frame.query(&[_]type{ Enemy, Transform, Physics }) catch return;
         defer query.deinit();
         
         while (query.next()) |entity| {
-            const enemy = frame.world.getComponent(entity, Enemy).?;
-            const transform = frame.world.getComponent(entity, Transform).?;
-            const physics = frame.world.getComponent(entity, Physics).?;
+            const enemy = frame.getComponent(entity, Enemy).?;
+            const transform = frame.getComponent(entity, Transform).?;
+            const physics = frame.getComponent(entity, Physics).?;
             
             // Calculate direction to player
             const dx = player_pos.?.position.x - transform.position.x;
@@ -174,18 +165,18 @@ pub const EnemySystem = struct {
 };
 
 pub const PhysicsSystem = struct {
-    pub fn init(frame: anytype) !void {
+    pub fn init(frame: *Frame) !void {
         _ = frame;
         std.debug.print("Initializing PhysicsSystem\n", .{});
     }
     
-    pub fn update(frame: anytype) void {
-        var query = frame.world.query(&[_]type{ Transform, Physics }) catch return;
+    pub fn update(frame: *Frame) void {
+        var query = frame.query(&[_]type{ Transform, Physics }) catch return;
         defer query.deinit();
         
         while (query.next()) |entity| {
-            const transform = frame.world.getComponent(entity, Transform).?;
-            const physics = frame.world.getComponent(entity, Physics).?;
+            const transform = frame.getComponent(entity, Transform).?;
+            const physics = frame.getComponent(entity, Physics).?;
             
             // Integrate velocity -> position
             transform.position.x += physics.velocity.x * frame.dt;
@@ -200,10 +191,4 @@ pub const PhysicsSystem = struct {
     }
 };
 
-// System array - order matters!
-pub const game_systems = [_]ecs.System{
-    ecs.System{ .name = "background", .initFn = BackgroundSystem.init, .updateFn = BackgroundSystem.update },
-    ecs.System{ .name = "player", .initFn = PlayerSystem.init, .updateFn = PlayerSystem.update },
-    ecs.System{ .name = "enemy", .initFn = EnemySystem.init, .updateFn = EnemySystem.update },
-    ecs.System{ .name = "physics", .initFn = PhysicsSystem.init, .updateFn = PhysicsSystem.update },
-};
+// Systems are referenced in frame.zig compile step - no array needed here

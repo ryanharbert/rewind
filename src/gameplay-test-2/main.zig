@@ -4,12 +4,13 @@ const ecs = @import("ecs");
 
 // Import game-specific modules
 const components = @import("components.zig");
-const simulation_setup = @import("simulation.zig");
+const ecs_setup = @import("ecs_setup.zig");
 const InputCommand = @import("input.zig").InputCommand;
 const rendering = @import("rendering.zig");
 
-// Game simulation type
-const GameSimulation = simulation_setup.GameSimulation;
+// ECS types from single setup file
+const GameSimulation = ecs_setup.GameSimulation;
+const Frame = ecs_setup.Frame;
 
 // Camera for rendering
 var camera: engine.Camera = undefined;
@@ -41,9 +42,9 @@ fn convertInput(engine_input: *const engine.Input, commands: *std.ArrayList(Inpu
 
 // Rendering system - extracts ECS data for presentation
 const RenderingBridge = struct {
-    pub fn renderEntities(world: anytype, renderer: *engine.Renderer, cam: *engine.Camera, allocator: std.mem.Allocator) !void {
+    pub fn renderEntities(frame: *Frame, renderer: *engine.Renderer, cam: *engine.Camera, allocator: std.mem.Allocator) !void {
         // Extract render data from ECS
-        const render_sprites = try rendering.extractRenderData(world, allocator);
+        const render_sprites = try rendering.extractRenderData(frame, allocator);
         defer allocator.free(render_sprites);
         
         // Convert to engine format
@@ -67,12 +68,12 @@ const RenderingBridge = struct {
         }
     }
     
-    pub fn updateCameraToFollowPlayer(world: anytype, cam: *engine.Camera, dt: f32) void {
-        var player_query = world.query(&[_]type{ components.Player, components.Transform }) catch return;
+    pub fn updateCameraToFollowPlayer(frame: *Frame, cam: *engine.Camera, dt: f32) void {
+        var player_query = frame.query(&[_]type{ components.Player, components.Transform }) catch return;
         defer player_query.deinit();
         
         if (player_query.next()) |player_entity| {
-            if (world.getComponent(player_entity, components.Transform)) |transform| {
+            if (frame.getComponent(player_entity, components.Transform)) |transform| {
                 cam.followTarget(transform.position.x, transform.position.y, dt, 8.0);
             }
         }
@@ -166,12 +167,12 @@ pub fn main() !void {
             self.frame_number += 1;
             
             // Update camera to follow player (presentation layer)
-            RenderingBridge.updateCameraToFollowPlayer(self.simulation.getWorld(), self.cam, delta_time);
+            RenderingBridge.updateCameraToFollowPlayer(self.simulation.getCurrentFrame(), self.cam, delta_time);
         }
         
         pub fn render(self: *@This(), renderer: *engine.Renderer) !void {
             // Extract simulation data and render (presentation layer)
-            try RenderingBridge.renderEntities(self.simulation.getWorld(), renderer, self.cam, self.allocator);
+            try RenderingBridge.renderEntities(self.simulation.getCurrentFrame(), renderer, self.cam, self.allocator);
         }
     };
     
