@@ -205,16 +205,14 @@ pub fn build(b: *std.Build) void {
     const gameplay_test2_build_options = b.addOptions();
     gameplay_test2_build_options.addOption(bool, "use_bitset_ecs", false); // Always false for gameplay-test-2
     
-    // Create dedicated ECS module for gameplay-test-2
+    // Create dedicated ECS module for gameplay-test-2 - use new generic ECS
     const gameplay_test2_ecs_module = b.createModule(.{
-        .root_source_file = b.path("src/ecs/world.zig"),
+        .root_source_file = b.path("src/ecs/mod.zig"),
     });
-    gameplay_test2_ecs_module.addOptions("build_options", gameplay_test2_build_options);
     
-    // Add both engine and ECS modules to gameplay-test-2
+    // Add engine and ECS modules to gameplay-test-2
     gameplay_test2_exe.root_module.addImport("engine", engine_module);
     gameplay_test2_exe.root_module.addImport("ecs", gameplay_test2_ecs_module);
-    gameplay_test2_exe.root_module.addOptions("build_options", gameplay_test2_build_options);
 
     // Add same libraries as main exe
     gameplay_test2_exe.addIncludePath(b.path("libs/glfw/glfw-3.4.bin.WIN64/include"));
