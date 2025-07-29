@@ -276,6 +276,111 @@ pub const FP = struct {
         return start.add(diff.mul(t));
     }
 
+    /// Move towards target by a maximum distance (never overshoots)
+    pub inline fn moveTowards(current: FP, target: FP, max_distance: FP) FP {
+        const diff = target.sub(current);
+        const abs_diff = diff.abs();
+        
+        if (abs_diff.lte(max_distance)) {
+            return target; // Close enough, snap to target
+        }
+        
+        const direction = if (diff.raw_value >= 0) fp(1) else fp(-1);
+        return current.add(direction.mul(max_distance));
+    }
+
+    /// Smooth damp interpolation (similar to Unity's SmoothDamp)
+    /// Gradually changes a value towards a desired goal over time
+    /// velocity: current velocity (should be persistent between calls)
+    /// smooth_time: approximate time to reach target
+    /// max_speed: optional maximum speed
+    /// delta_time: time since last call
+    pub fn smoothDamp(current: FP, target: FP, velocity: *FP, smooth_time: FP, max_speed: FP, delta_time: FP) FP {
+        // Based on Game Programming Gems 4 Chapter 1.10
+        const smooth_time_safe = smooth_time.max(fp(0.0001));
+        const omega = fp(2).div(smooth_time_safe);
+        const x = omega.mul(delta_time);
+        const exp_term = fp(1).div(fp(1).add(x).add(x.mul(x).mul(fp(0.48))).add(x.mul(x).mul(x).mul(fp(0.235))));
+        
+        var change = current.sub(target);
+        const original_to = target;
+        
+        // Clamp maximum speed
+        const max_change = max_speed.mul(smooth_time_safe);
+        const abs_change = change.abs();
+        if (abs_change.gt(max_change)) {
+            change = change.div(abs_change).mul(max_change);
+        }
+        
+        const new_target = current.sub(change);
+        const temp = velocity.add(change.mul(omega)).mul(delta_time);
+        velocity.* = velocity.sub(omega.mul(temp)).mul(exp_term);
+        
+        var output = new_target.add(change.add(temp).mul(exp_term));
+        
+        // Prevent overshooting
+        if ((original_to.sub(current).raw_value > 0) == (output.raw_value > original_to.raw_value)) {
+            output = original_to;
+            velocity.* = output.sub(original_to).div(delta_time);
+        }
+        
+        return output;
+    }
+
+    /// Spring interpolation with damping
+    /// Simulates a spring-mass-damper system
+    pub fn spring(current: FP, target: FP, velocity: *FP, spring_strength: FP, damping: FP, delta_time: FP) FP {
+        const displacement = target.sub(current);
+        const spring_force = displacement.mul(spring_strength);
+        const damping_force = velocity.mul(damping).negate();
+        
+        const acceleration = spring_force.add(damping_force);
+        velocity.* = velocity.add(acceleration.mul(delta_time));
+        
+        return current.add(velocity.mul(delta_time));
+    }
+
+    /// Ease-in interpolation (quadratic)
+    pub inline fn easeIn(t: FP) FP {
+        const clamped_t = t.clamp01();
+        return clamped_t.mul(clamped_t);
+    }
+
+    /// Ease-out interpolation (quadratic)
+    pub inline fn easeOut(t: FP) FP {
+        const clamped_t = t.clamp01();
+        const one_minus_t = fp(1).sub(clamped_t);
+        return fp(1).sub(one_minus_t.mul(one_minus_t));
+    }
+
+    /// Ease-in-out interpolation (quadratic)
+    pub inline fn easeInOut(t: FP) FP {
+        const clamped_t = t.clamp01();
+        if (clamped_t.lt(fp(0.5))) {
+            return fp(2).mul(clamped_t).mul(clamped_t);
+        } else {
+            const temp = fp(2).mul(clamped_t).sub(fp(2));
+            return fp(1).sub(temp.mul(temp).div(fp(2)));
+        }
+    }
+
+    /// Ping-pong between 0 and length
+    pub inline fn pingPong(t: FP, length: FP) FP {
+        const abs_t = t.abs();
+        const remainder = abs_t.mod(length.mul(fp(2))); // Double length for full cycle
+        
+        if (remainder.lte(length)) {
+            return remainder; // First half: forward (0 to length)
+        } else {
+            return length.mul(fp(2)).sub(remainder); // Second half: backward (length to 0)
+        }
+    }
+
+    /// Repeat value between 0 and length (sawtooth wave)
+    pub inline fn repeat(t: FP, length: FP) FP {
+        return t.sub(length.mul(t.div(length).floor()));
+    }
+
     /// Square root approximation using Newton-Raphson
     pub fn sqrt(self: FP) FP {
         if (self.raw_value < 0) {
@@ -697,6 +802,99 @@ pub const FP = struct {
     pub fn expDecay(start: FP, end: FP, decay_rate: FP, dt: FP) FP {
         const factor = decay_rate.mul(dt).negate().exp();
         return end.add(start.sub(end).mul(factor));
+    }
+
+    /// Performance optimization functions - direct raw value operations
+
+    /// Fast multiplication without overflow checking (use carefully!)
+    pub inline fn mulFast(a: FP, b: FP) FP {
+        return FP{ .raw_value = (a.raw_value * b.raw_value) >> PRECISION };
+    }
+
+    /// Combined multiply-add operation: (a * b) + c
+    pub inline fn multiplyAdd(a: FP, b: FP, c: FP) FP {
+        return FP{ .raw_value = ((a.raw_value * b.raw_value) >> PRECISION) + c.raw_value };
+    }
+
+    /// Combined multiply-subtract operation: (a * b) - c
+    pub inline fn multiplySub(a: FP, b: FP, c: FP) FP {
+        return FP{ .raw_value = ((a.raw_value * b.raw_value) >> PRECISION) - c.raw_value };
+    }
+
+    /// Square operation (faster than x.mul(x))
+    pub inline fn square(self: FP) FP {
+        return FP{ .raw_value = (self.raw_value * self.raw_value + HALF_RAW) >> PRECISION };
+    }
+
+    /// Cube operation (faster than x.mul(x).mul(x))
+    pub inline fn cube(self: FP) FP {
+        const x2 = self.square();
+        return self.mul(x2);
+    }
+
+    /// Reciprocal operation (1/x) - faster than fp(1).div(x)
+    pub fn reciprocal(self: FP) FP {
+        return FP{ .raw_value = @divTrunc(ONE_RAW << PRECISION, self.raw_value) };
+    }
+
+    /// Angle utility functions
+
+    /// Convert degrees to radians
+    pub inline fn degreesToRadians(degrees: FP) FP {
+        return degrees.mul(DEG2RAD);
+    }
+
+    /// Convert radians to degrees
+    pub inline fn radiansToDegrees(radians: FP) FP {
+        return radians.mul(RAD2DEG);
+    }
+
+    /// Normalize angle to [-π, π] range
+    pub fn normalizeAngle(angle: FP) FP {
+        var result = angle.mod(TAU);
+        if (result.gt(PI)) {
+            result = result.sub(TAU);
+        } else if (result.lt(PI.negate())) {
+            result = result.add(TAU);
+        }
+        return result;
+    }
+
+    /// Normalize angle to [0, 2π] range
+    pub fn normalizeAnglePositive(angle: FP) FP {
+        var result = angle.mod(TAU);
+        if (result.lt(fp(0))) {
+            result = result.add(TAU);
+        }
+        return result;
+    }
+
+    /// Get the shortest angular distance between two angles
+    pub fn angleDifference(angle1: FP, angle2: FP) FP {
+        var diff = angle2.sub(angle1);
+        diff = diff.normalizeAngle();
+        return diff;
+    }
+
+    /// Linear interpolation between two angles (handles wraparound)
+    pub fn angleLerp(start: FP, end: FP, t: FP) FP {
+        var diff = end.sub(start);
+        diff = diff.normalizeAngle();
+        return start.add(diff.mul(t)).normalizeAngle();
+    }
+
+    /// Check if angle is in a specific range (handles wraparound)
+    pub fn angleInRange(angle: FP, min_angle: FP, max_angle: FP) bool {
+        const norm_angle = angle.normalizeAngle();
+        const norm_min = min_angle.normalizeAngle();
+        const norm_max = max_angle.normalizeAngle();
+        
+        if (norm_min.lte(norm_max)) {
+            return norm_angle.gte(norm_min) and norm_angle.lte(norm_max);
+        } else {
+            // Range crosses zero
+            return norm_angle.gte(norm_min) or norm_angle.lte(norm_max);
+        }
     }
 
     /// String formatting

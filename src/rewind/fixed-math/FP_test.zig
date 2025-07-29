@@ -516,3 +516,124 @@ test "FP advanced interpolation functions" {
     const exp_decay = FP.expDecay(fp(10), fp(0), fp(2), fp(1)); // Decay from 10 to 0
     try testing.expect(exp_decay.gt(fp(0)) and exp_decay.lt(fp(10))); // Should be between 0 and 10
 }
+
+test "FP performance optimization functions" {
+    const a = fp(3);
+    const b = fp(4);
+    const c = fp(5);
+    
+    // Test fast multiplication
+    const mul_fast = a.mulFast(b);
+    const mul_normal = a.mul(b);
+    try testing.expectEqual(mul_normal.raw_value, mul_fast.raw_value);
+    
+    // Test multiply-add
+    const mul_add = a.multiplyAdd(b, c); // (3 * 4) + 5 = 17
+    try testing.expectEqual(@as(i64, 17 << 16), mul_add.raw_value);
+    
+    // Test multiply-subtract
+    const mul_sub = a.multiplySub(b, c); // (3 * 4) - 5 = 7
+    try testing.expectEqual(@as(i64, 7 << 16), mul_sub.raw_value);
+    
+    // Test square
+    const square_a = a.square(); // 3² = 9
+    try testing.expectEqual(@as(i64, 9 << 16), square_a.raw_value);
+    
+    // Test cube
+    const cube_a = a.cube(); // 3³ = 27
+    try testing.expectEqual(@as(i64, 27 << 16), cube_a.raw_value);
+    
+    // Test reciprocal
+    const recip_b = b.reciprocal(); // 1/4 = 0.25
+    try testing.expectApproxEqAbs(@as(f32, 0.25), recip_b.toFloat(f32), 0.01);
+}
+
+test "FP angle utility functions" {
+    // Test degree/radian conversion
+    const deg_90 = fp(90);
+    const rad_90 = deg_90.degreesToRadians();
+    try testing.expectApproxEqAbs(FP.PI_2.toFloat(f32), rad_90.toFloat(f32), 0.05);
+    
+    const back_to_deg = rad_90.radiansToDegrees();
+    try testing.expectApproxEqAbs(@as(f32, 90.0), back_to_deg.toFloat(f32), 0.1);
+    
+    // Test angle normalization
+    const big_angle = FP.PI.mul(fp(3)); // 3π
+    const normalized = big_angle.normalizeAngle(); // Should be π
+    try testing.expectApproxEqAbs(FP.PI.toFloat(f32), normalized.toFloat(f32), 0.05);
+    
+    const positive_normalized = big_angle.normalizeAnglePositive(); // Should be π
+    try testing.expectApproxEqAbs(FP.PI.toFloat(f32), positive_normalized.toFloat(f32), 0.05);
+    
+    // Test angle difference
+    const angle1 = fp(0.1); // Small positive angle
+    const angle2 = FP.PI.mul(fp(2)).sub(fp(0.1)); // Just before 2π
+    const diff = angle1.angleDifference(angle2);
+    try testing.expectApproxEqAbs(@as(f32, -0.2), diff.toFloat(f32), 0.05); // Should be negative
+    
+    // Test angle lerp
+    const start_angle = fp(0);
+    const end_angle = FP.PI_2; // π/2
+    const lerp_angle = start_angle.angleLerp(end_angle, fp(0.5));
+    try testing.expectApproxEqAbs(FP.PI_4.toFloat(f32), lerp_angle.toFloat(f32), 0.05); // π/4
+    
+    // Test angle in range
+    const test_angle = FP.PI_4; // π/4
+    const min_angle = fp(0);
+    const max_angle = FP.PI_2; // π/2
+    try testing.expect(test_angle.angleInRange(min_angle, max_angle));
+    try testing.expect(!test_angle.angleInRange(FP.PI_2, FP.PI)); // Not in [π/2, π]
+}
+
+test "FP smoothing and movement functions" {
+    // Test moveTowards
+    const current = fp(0);
+    const target = fp(10);
+    const max_dist = fp(3);
+    
+    const moved = current.moveTowards(target, max_dist);
+    try testing.expectEqual(fp(3).raw_value, moved.raw_value); // Should move 3 units
+    
+    const moved_close = fp(8).moveTowards(target, max_dist);
+    try testing.expectEqual(target.raw_value, moved_close.raw_value); // Should snap to target
+    
+    // Test smoothDamp
+    var velocity = fp(0);
+    const smooth_time = fp(1);
+    const max_speed = fp(100);
+    const delta_time = fp(0.016); // ~60fps
+    
+    const smoothed = current.smoothDamp(target, &velocity, smooth_time, max_speed, delta_time);
+    try testing.expect(smoothed.gt(current) and smoothed.lt(target)); // Should be between current and target
+    try testing.expect(velocity.gt(fp(0))); // Velocity should be positive (moving toward target)
+    
+    // Test spring
+    var spring_velocity = fp(0);
+    const spring_strength = fp(10);
+    const damping = fp(2);
+    
+    const spring_result = current.spring(target, &spring_velocity, spring_strength, damping, delta_time);
+    try testing.expect(spring_result.gt(current)); // Should move toward target
+    try testing.expect(spring_velocity.gt(fp(0))); // Should have positive velocity
+    
+    // Test easing functions
+    const ease_in_half = fp(0.5).easeIn();
+    try testing.expectApproxEqAbs(@as(f32, 0.25), ease_in_half.toFloat(f32), 0.01); // 0.5² = 0.25
+    
+    const ease_out_half = fp(0.5).easeOut();
+    try testing.expectApproxEqAbs(@as(f32, 0.75), ease_out_half.toFloat(f32), 0.01); // 1 - (1-0.5)² = 0.75
+    
+    const ease_in_out_half = fp(0.5).easeInOut();
+    try testing.expectApproxEqAbs(@as(f32, 0.5), ease_in_out_half.toFloat(f32), 0.01); // Should be 0.5 at midpoint
+    
+    // Test ping-pong
+    const ping_pong_result = fp(1.5).pingPong(fp(1)); // 1.5 with length 1: 1.5 % 2 = 1.5, since 1.5 > 1, return 2 - 1.5 = 0.5
+    try testing.expectApproxEqAbs(@as(f32, 0.5), ping_pong_result.toFloat(f32), 0.01);
+    
+    const ping_pong_result2 = fp(2.3).pingPong(fp(1)); // 2.3 with length 1: 2.3 % 2 = 0.3, since 0.3 < 1, return 0.3
+    try testing.expectApproxEqAbs(@as(f32, 0.3), ping_pong_result2.toFloat(f32), 0.01);
+    
+    // Test repeat
+    const repeat_result = fp(2.7).repeat(fp(1)); // 2.7 with length 1 should return 0.7
+    try testing.expectApproxEqAbs(@as(f32, 0.7), repeat_result.toFloat(f32), 0.01);
+}
