@@ -7,6 +7,15 @@ pub const FP = struct {
     raw_value: i64,
 
     /// Constants
+    /// Fractional precision in bits - can be any value from 8 to 24
+    /// Common options (all have equal performance):
+    ///   12: ±1,048,576 range, 1/4096 ≈ 0.0002 precision     - Large worlds, basic smoothing
+    ///   14: ±131,072 range,   1/16384 ≈ 0.000061 precision   - Good for RTS/strategy games
+    ///   15: ±65,536 range,    1/32768 ≈ 0.000031 precision   - Solid general purpose
+    ///   16: ±32,768 range,    1/65536 ≈ 0.000015 precision   - Industry standard (current)
+    ///   17: ±16,384 range,    1/131072 ≈ 0.0000076 precision - 2x smoother, great for 3D
+    ///   18: ±8,192 range,     1/262144 ≈ 0.0000038 precision - 4x smoother, smaller worlds
+    ///   20: ±2,048 range,     1/1048576 ≈ 0.00000095 precision - Ultra smooth, tiny range
     pub const PRECISION: u6 = 16;
     pub const FRACTIONAL_MASK: i64 = (1 << PRECISION) - 1;
     pub const INTEGER_MASK: i64 = ~FRACTIONAL_MASK;
