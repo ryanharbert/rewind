@@ -1,0 +1,16 @@
+# Ignore the problematic nul file
+nul
+
+# Ignore build outputs
+bin/
+obj/
+*.exe
+*.obj
+*.pdb
+
+# Ignore Zig build outputs
+zig-out/
+
+# Ignore common temporary files
+*.tmp
+*.temp
