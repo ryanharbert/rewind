@@ -127,17 +127,6 @@ pub fn ECS(
                 pub fn count(self: *const StorageSelf) u32 {
                     return @intCast(self.dense.items.len);
                 }
-
-                // Direct access methods for hot paths - no safety checks
-                pub inline fn getDirect(self: *StorageSelf, entity: EntityID) *T {
-                    const index = self.entity_to_index[entity];
-                    return &self.dense.items[index];
-                }
-
-                pub inline fn getDirectConst(self: *const StorageSelf, entity: EntityID) *const T {
-                    const index = self.entity_to_index[entity];
-                    return &self.dense.items[index];
-                }
             };
         }
 
@@ -259,12 +248,6 @@ pub fn ECS(
                 return self.entity_count;
             }
 
-            // Direct storage access for performance-critical code
-            pub inline fn getStorage(self: *FrameStateSelf, comptime T: type) *StorageTypes[getComponentIndex(T)] {
-                const storage_index = comptime getComponentIndex(T);
-                return &self.storages[storage_index];
-            }
-
 
             // ===== ROLLBACK SUPPORT =====
 
@@ -353,15 +336,6 @@ pub fn ECS(
                     return .{ .query = self };
                 }
 
-                // Execute a function for each entity in the query - optimized path
-                pub inline fn forEach(self: *QuerySelf, comptime func: fn(*FrameStateType, EntityID) void) void {
-                    var iter = self.result_entities.iterator(.{});
-                    while (iter.next()) |entity_index| {
-                        const entity = @as(EntityID, @intCast(entity_index));
-                        func(self.frame_state, entity);
-                    }
-                }
-
                 // No deinit needed - everything is stack allocated!
             };
         }
@@ -419,11 +393,6 @@ pub fn ECS(
 
             pub fn getEntityCount(self: *const FrameSelf) u32 {
                 return self.state.getEntityCount();
-            }
-
-            // Direct storage access for performance-critical code
-            pub inline fn getStorage(self: *FrameSelf, comptime T: type) *StorageTypes[getComponentIndex(T)] {
-                return self.state.getStorage(T);
             }
         };
 
@@ -514,3 +483,4 @@ pub fn ECS(
         }
     };
 }
+
