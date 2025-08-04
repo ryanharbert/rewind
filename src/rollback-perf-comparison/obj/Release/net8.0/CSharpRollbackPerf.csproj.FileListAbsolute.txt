@@ -1,0 +1,15 @@
+C:\Ryan\Rewind\src\rollback-perf-comparison\bin\Release\net8.0\CSharpRollbackPerf.exe
+C:\Ryan\Rewind\src\rollback-perf-comparison\bin\Release\net8.0\CSharpRollbackPerf.deps.json
+C:\Ryan\Rewind\src\rollback-perf-comparison\bin\Release\net8.0\CSharpRollbackPerf.runtimeconfig.json
+C:\Ryan\Rewind\src\rollback-perf-comparison\bin\Release\net8.0\CSharpRollbackPerf.dll
+C:\Ryan\Rewind\src\rollback-perf-comparison\bin\Release\net8.0\CSharpRollbackPerf.pdb
+C:\Ryan\Rewind\src\rollback-perf-comparison\obj\Release\net8.0\CSharpRollbackPerf.GeneratedMSBuildEditorConfig.editorconfig
+C:\Ryan\Rewind\src\rollback-perf-comparison\obj\Release\net8.0\CSharpRollbackPerf.AssemblyInfoInputs.cache
+C:\Ryan\Rewind\src\rollback-perf-comparison\obj\Release\net8.0\CSharpRollbackPerf.AssemblyInfo.cs
+C:\Ryan\Rewind\src\rollback-perf-comparison\obj\Release\net8.0\CSharpRollbackPerf.csproj.CoreCompileInputs.cache
+C:\Ryan\Rewind\src\rollback-perf-comparison\obj\Release\net8.0\CSharpRollbackPerf.sourcelink.json
+C:\Ryan\Rewind\src\rollback-perf-comparison\obj\Release\net8.0\CSharpRollbackPerf.dll
+C:\Ryan\Rewind\src\rollback-perf-comparison\obj\Release\net8.0\refint\CSharpRollbackPerf.dll
+C:\Ryan\Rewind\src\rollback-perf-comparison\obj\Release\net8.0\CSharpRollbackPerf.pdb
+C:\Ryan\Rewind\src\rollback-perf-comparison\obj\Release\net8.0\CSharpRollbackPerf.genruntimeconfig.cache
+C:\Ryan\Rewind\src\rollback-perf-comparison\obj\Release\net8.0\ref\CSharpRollbackPerf.dll

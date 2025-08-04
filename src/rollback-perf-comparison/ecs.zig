@@ -427,24 +427,11 @@ pub fn ECS(
                     storage.entity_bitset.copyFrom(&other_storage.entity_bitset);
                     storage.entity_to_index = other_storage.entity_to_index;
 
-                    // Optimized copying using @memcpy - avoid resize() reallocation overhead
-                    const other_dense_len = other_storage.dense.items.len;
-                    const other_index_len = other_storage.index_to_entity.items.len;
-                    
-                    // Ensure capacity without reallocation, then set length directly
-                    try storage.dense.ensureTotalCapacity(other_dense_len);
-                    try storage.index_to_entity.ensureTotalCapacity(other_index_len);
-                    
-                    storage.dense.items.len = other_dense_len;
-                    storage.index_to_entity.items.len = other_index_len;
-                    
-                    // Use raw @memcpy for maximum performance
-                    if (other_dense_len > 0) {
-                        @memcpy(storage.dense.items, other_storage.dense.items);
-                    }
-                    if (other_index_len > 0) {
-                        @memcpy(storage.index_to_entity.items, other_storage.index_to_entity.items);
-                    }
+                    storage.dense.clearRetainingCapacity();
+                    try storage.dense.appendSlice(other_storage.dense.items);
+
+                    storage.index_to_entity.clearRetainingCapacity();
+                    try storage.index_to_entity.appendSlice(other_storage.index_to_entity.items);
                 }
             }
         };
@@ -632,29 +619,6 @@ pub fn ECS(
             self.current_frame.frame_number += 1;
         }
 
-        // Calculate the exact size needed for frame data (only used components)
-        pub fn calculateFrameSize(self: *const Self) usize {
-            var size: usize = 0;
-            
-            // Header: entity_count, component counts, next_entity
-            size += @sizeOf(u32) * (2 + ComponentTypes.len); // entity_count, next_entity, + component counts
-            
-            // EntityBitSet
-            size += @sizeOf(EntityBitSet);
-            
-            // Component data (only actual used data)
-            inline for (0..ComponentTypes.len) |i| {
-                const component_count = self.current_frame.state.storages[i].dense.items.len;
-                size += component_count * @sizeOf(ComponentTypes[i]);
-                size += component_count * @sizeOf(EntityID); // index_to_entity mapping
-            }
-            
-            // Entity to component index mappings (fixed size)
-            size += @sizeOf([MAX_ENTITIES]u32) * ComponentTypes.len;
-            
-            return size;
-        }
-
         pub fn saveFrame(self: *const Self, allocator: std.mem.Allocator) !Frame {
             var saved_frame = Frame{
                 .state = FrameState{
@@ -672,7 +636,6 @@ pub fn ECS(
                 .frame_number = self.current_frame.frame_number,
             };
 
-            // When allocator is arena/fixed buffer, all data becomes contiguous!
             inline for (0..ComponentTypes.len) |i| {
                 saved_frame.state.storages[i] = StorageTypes[i].init(allocator);
             }
@@ -693,47 +656,6 @@ pub fn ECS(
         pub fn freeSavedFrame(saved_frame: *Frame) void {
             inline for (0..ComponentTypes.len) |i| {
                 saved_frame.state.storages[i].deinit();
-            }
-        }
-
-        // Efficient frame copying - copy into pre-allocated frame without new allocations
-        pub fn copyFrameTo(self: *const Self, dest_frame: *Frame) !void {
-            try dest_frame.state.copyFrom(&self.current_frame.state);
-            dest_frame.input = self.current_frame.input;
-            dest_frame.deltaTime = self.current_frame.deltaTime;
-            dest_frame.time = self.current_frame.time;
-            dest_frame.frame_number = self.current_frame.frame_number;
-        }
-
-        // Create a pre-allocated frame for efficient copying
-        pub fn createPreAllocatedFrame(allocator: std.mem.Allocator) !Frame {
-            var frame = Frame{
-                .state = FrameState{
-                    .storages = undefined,
-                    .active_entities = EntityBitSet.initEmpty(),
-                    .next_entity = 0,
-                    .entity_count = 0,
-                    .allocator = allocator,
-                    .query_result = EntityBitSet.initEmpty(),
-                    .query_temp = EntityBitSet.initEmpty(),
-                },
-                .input = std.mem.zeroes(InputType),
-                .deltaTime = 0.0,
-                .time = 0.0,
-                .frame_number = 0,
-            };
-
-            inline for (0..ComponentTypes.len) |i| {
-                frame.state.storages[i] = StorageTypes[i].init(allocator);
-            }
-
-            return frame;
-        }
-
-        // Free a pre-allocated frame
-        pub fn freePreAllocatedFrame(frame: *Frame) void {
-            inline for (0..ComponentTypes.len) |i| {
-                frame.state.storages[i].deinit();
             }
         }
     };

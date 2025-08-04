@@ -1,0 +1,15 @@
+C:\Ryan\Rewind\src\rollback-perf-comparison\raw-test\bin\Release\net9.0\RawCopyTest.exe
+C:\Ryan\Rewind\src\rollback-perf-comparison\raw-test\bin\Release\net9.0\RawCopyTest.deps.json
+C:\Ryan\Rewind\src\rollback-perf-comparison\raw-test\bin\Release\net9.0\RawCopyTest.runtimeconfig.json
+C:\Ryan\Rewind\src\rollback-perf-comparison\raw-test\bin\Release\net9.0\RawCopyTest.dll
+C:\Ryan\Rewind\src\rollback-perf-comparison\raw-test\bin\Release\net9.0\RawCopyTest.pdb
+C:\Ryan\Rewind\src\rollback-perf-comparison\raw-test\obj\Release\net9.0\RawCopyTest.GeneratedMSBuildEditorConfig.editorconfig
+C:\Ryan\Rewind\src\rollback-perf-comparison\raw-test\obj\Release\net9.0\RawCopyTest.AssemblyInfoInputs.cache
+C:\Ryan\Rewind\src\rollback-perf-comparison\raw-test\obj\Release\net9.0\RawCopyTest.AssemblyInfo.cs
+C:\Ryan\Rewind\src\rollback-perf-comparison\raw-test\obj\Release\net9.0\RawCopyTest.csproj.CoreCompileInputs.cache
+C:\Ryan\Rewind\src\rollback-perf-comparison\raw-test\obj\Release\net9.0\RawCopyTest.sourcelink.json
+C:\Ryan\Rewind\src\rollback-perf-comparison\raw-test\obj\Release\net9.0\RawCopyTest.dll
+C:\Ryan\Rewind\src\rollback-perf-comparison\raw-test\obj\Release\net9.0\refint\RawCopyTest.dll
+C:\Ryan\Rewind\src\rollback-perf-comparison\raw-test\obj\Release\net9.0\RawCopyTest.pdb
+C:\Ryan\Rewind\src\rollback-perf-comparison\raw-test\obj\Release\net9.0\RawCopyTest.genruntimeconfig.cache
+C:\Ryan\Rewind\src\rollback-perf-comparison\raw-test\obj\Release\net9.0\ref\RawCopyTest.dll

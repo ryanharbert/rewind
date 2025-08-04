@@ -1,0 +1,5 @@
+C:\Ryan\Rewind\src\rollback-perf-comparison\obj\Release\net9.0\RawCopyTest.GeneratedMSBuildEditorConfig.editorconfig
+C:\Ryan\Rewind\src\rollback-perf-comparison\obj\Release\net9.0\RawCopyTest.AssemblyInfoInputs.cache
+C:\Ryan\Rewind\src\rollback-perf-comparison\obj\Release\net9.0\RawCopyTest.AssemblyInfo.cs
+C:\Ryan\Rewind\src\rollback-perf-comparison\obj\Release\net9.0\RawCopyTest.csproj.CoreCompileInputs.cache
+C:\Ryan\Rewind\src\rollback-perf-comparison\obj\Release\net9.0\RawCopyTest.sourcelink.json
