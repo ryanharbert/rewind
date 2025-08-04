@@ -211,25 +211,22 @@ pub fn ECS(
                 dense: std.ArrayList(T),
                 entity_bitset: EntityBitSet,
                 entity_to_index: [MAX_ENTITIES]u32,
-                index_to_entity: std.ArrayList(EntityID),
 
-                const StorageSelf = @This();
+                const ComponentStorage = @This();
 
-                pub fn init(allocator: std.mem.Allocator) StorageSelf {
-                    return StorageSelf{
+                pub fn init(allocator: std.mem.Allocator) ComponentStorage {
+                    return ComponentStorage{
                         .dense = std.ArrayList(T).init(allocator),
                         .entity_bitset = EntityBitSet.initEmpty(),
                         .entity_to_index = [_]u32{0} ** MAX_ENTITIES,
-                        .index_to_entity = std.ArrayList(EntityID).init(allocator),
                     };
                 }
 
-                pub fn deinit(self: *StorageSelf) void {
+                pub fn deinit(self: *ComponentStorage) void {
                     self.dense.deinit();
-                    self.index_to_entity.deinit();
                 }
 
-                pub fn add(self: *StorageSelf, entity: EntityID, component: T) !void {
+                pub fn add(self: *ComponentStorage, entity: EntityID, component: T) !void {
                     if (entity >= MAX_ENTITIES) {
                         std.log.err("Cannot add component to entity {}: exceeds max limit of {} entities. " ++
                             "Increase max_entities in ECS config (current: {s})", .{ entity, MAX_ENTITIES, @tagName(config.max_entities) });
@@ -239,12 +236,11 @@ pub fn ECS(
 
                     const index = @as(u32, @intCast(self.dense.items.len));
                     try self.dense.append(component);
-                    try self.index_to_entity.append(entity);
                     self.entity_to_index[entity] = index;
                     self.entity_bitset.set(entity);
                 }
 
-                pub fn get(self: *StorageSelf, entity: EntityID) ?*T {
+                pub fn get(self: *ComponentStorage, entity: EntityID) ?*T {
                     if (entity >= MAX_ENTITIES) return null;
                     if (!self.entity_bitset.isSet(entity)) return null;
 
@@ -252,12 +248,12 @@ pub fn ECS(
                     return &self.dense.items[index];
                 }
 
-                pub fn has(self: *StorageSelf, entity: EntityID) bool {
+                pub fn has(self: *ComponentStorage, entity: EntityID) bool {
                     if (entity >= MAX_ENTITIES) return false;
                     return self.entity_bitset.isSet(entity);
                 }
 
-                pub fn remove(self: *StorageSelf, entity: EntityID) bool {
+                pub fn remove(self: *ComponentStorage, entity: EntityID) bool {
                     if (entity >= MAX_ENTITIES) return false;
                     if (!self.entity_bitset.isSet(entity)) return false;
 
@@ -265,46 +261,54 @@ pub fn ECS(
                     const last_index = self.dense.items.len - 1;
 
                     if (index != last_index) {
-                        const last_entity = self.index_to_entity.items[last_index];
+                        // Need to find which entity is at the last position
+                        // We'll iterate through active entities to find it
+                        var last_entity: EntityID = 0;
+                        for (0..MAX_ENTITIES) |e| {
+                            const eid = @as(EntityID, @intCast(e));
+                            if (self.entity_bitset.isSet(eid) and self.entity_to_index[eid] == last_index) {
+                                last_entity = eid;
+                                break;
+                            }
+                        }
+                        
                         self.dense.items[index] = self.dense.items[last_index];
-                        self.index_to_entity.items[index] = last_entity;
                         self.entity_to_index[last_entity] = index;
                     }
 
                     _ = self.dense.pop();
-                    _ = self.index_to_entity.pop();
                     self.entity_bitset.unset(entity);
 
                     return true;
                 }
 
-                pub fn count(self: *const StorageSelf) u32 {
+                pub fn count(self: *const ComponentStorage) u32 {
                     return @intCast(self.dense.items.len);
                 }
 
                 // Direct access methods for hot paths
-                pub inline fn getDirect(self: *StorageSelf, entity: EntityID) *T {
+                pub inline fn getDirect(self: *ComponentStorage, entity: EntityID) *T {
                     const index = self.entity_to_index[entity];
                     return &self.dense.items[index];
                 }
 
-                pub inline fn getDirectConst(self: *const StorageSelf, entity: EntityID) *const T {
+                pub inline fn getDirectConst(self: *const ComponentStorage, entity: EntityID) *const T {
                     const index = self.entity_to_index[entity];
                     return &self.dense.items[index];
                 }
 
                 // Expose raw arrays for maximum performance direct access
-                pub inline fn getDenseArray(self: *StorageSelf) []T {
+                pub inline fn getDenseArray(self: *ComponentStorage) []T {
                     return self.dense.items;
                 }
 
-                pub inline fn getEntityToIndexArray(self: *StorageSelf) *[MAX_ENTITIES]u32 {
+                pub inline fn getEntityToIndexArray(self: *ComponentStorage) *[MAX_ENTITIES]u32 {
                     return &self.entity_to_index;
                 }
             };
         }
 
-        const StorageTypes = blk: {
+        const ComponentStorageTypes = blk: {
             var storage_types: [ComponentTypes.len]type = undefined;
             for (ComponentTypes, 0..) |T, i| {
                 storage_types[i] = generateComponentStorage(T);
@@ -322,7 +326,7 @@ pub fn ECS(
         }
 
         pub const FrameState = struct {
-            storages: std.meta.Tuple(&StorageTypes),
+            components: std.meta.Tuple(&ComponentStorageTypes),
             active_entities: EntityBitSet,
             next_entity: EntityID,
             entity_count: u32,
@@ -358,7 +362,7 @@ pub fn ECS(
                 if (!self.active_entities.isSet(entity)) return;
 
                 inline for (0..ComponentTypes.len) |i| {
-                    _ = self.storages[i].remove(entity);
+                    _ = self.components[i].remove(entity);
                 }
 
                 self.active_entities.unset(entity);
@@ -382,37 +386,37 @@ pub fn ECS(
                 }
 
                 const storage_index = comptime getComponentIndex(T);
-                try self.storages[storage_index].add(entity, component);
+                try self.components[storage_index].add(entity, component);
             }
 
             pub fn getComponent(self: *FrameStateSelf, entity: EntityID, comptime T: type) ?*T {
                 if (entity == INVALID_ENTITY) return null;
                 const storage_index = comptime getComponentIndex(T);
-                return self.storages[storage_index].get(entity);
+                return self.components[storage_index].get(entity);
             }
 
             pub fn hasComponent(self: *FrameStateSelf, entity: EntityID, comptime T: type) bool {
                 if (entity == INVALID_ENTITY) return false;
                 const storage_index = comptime getComponentIndex(T);
-                return self.storages[storage_index].has(entity);
+                return self.components[storage_index].has(entity);
             }
 
             pub fn removeComponent(self: *FrameStateSelf, entity: EntityID, comptime T: type) bool {
                 const storage_index = comptime getComponentIndex(T);
-                return self.storages[storage_index].remove(entity);
+                return self.components[storage_index].remove(entity);
             }
 
-            pub fn query(self: *FrameStateSelf, comptime QueryTypes: []const type) !buildQuery(QueryTypes, FrameStateSelf) {
-                return buildQuery(QueryTypes, FrameStateSelf).init(self);
+            pub fn query(self: *FrameStateSelf, comptime QueryTypes: []const type) !generateQuery(QueryTypes, FrameStateSelf) {
+                return generateQuery(QueryTypes, FrameStateSelf).init(self);
             }
 
             pub fn getEntityCount(self: *const FrameStateSelf) u32 {
                 return self.entity_count;
             }
 
-            pub inline fn getStorage(self: *FrameStateSelf, comptime T: type) *StorageTypes[getComponentIndex(T)] {
+            pub inline fn getComponentStorage(self: *FrameStateSelf, comptime T: type) *ComponentStorageTypes[getComponentIndex(T)] {
                 const storage_index = comptime getComponentIndex(T);
-                return &self.storages[storage_index];
+                return &self.components[storage_index];
             }
 
             pub fn copyFrom(self: *FrameStateSelf, other: *const FrameStateSelf) !void {
@@ -421,35 +425,29 @@ pub fn ECS(
                 self.entity_count = other.entity_count;
 
                 inline for (0..ComponentTypes.len) |i| {
-                    const other_storage = &other.storages[i];
-                    var storage = &self.storages[i];
+                    const other_storage = &other.components[i];
+                    var storage = &self.components[i];
 
                     storage.entity_bitset.copyFrom(&other_storage.entity_bitset);
                     storage.entity_to_index = other_storage.entity_to_index;
 
                     // Optimized copying using @memcpy - avoid resize() reallocation overhead
                     const other_dense_len = other_storage.dense.items.len;
-                    const other_index_len = other_storage.index_to_entity.items.len;
                     
                     // Ensure capacity without reallocation, then set length directly
                     try storage.dense.ensureTotalCapacity(other_dense_len);
-                    try storage.index_to_entity.ensureTotalCapacity(other_index_len);
                     
                     storage.dense.items.len = other_dense_len;
-                    storage.index_to_entity.items.len = other_index_len;
                     
                     // Use raw @memcpy for maximum performance
                     if (other_dense_len > 0) {
                         @memcpy(storage.dense.items, other_storage.dense.items);
                     }
-                    if (other_index_len > 0) {
-                        @memcpy(storage.index_to_entity.items, other_storage.index_to_entity.items);
-                    }
                 }
             }
         };
 
-        fn buildQuery(comptime QueryTypes: []const type, comptime FrameStateType: type) type {
+        fn generateQuery(comptime QueryTypes: []const type, comptime FrameStateType: type) type {
             return struct {
                 const QuerySelf = @This();
 
@@ -463,7 +461,7 @@ pub fn ECS(
 
                     inline for (QueryTypes) |T| {
                         const storage_index = comptime getComponentIndex(T);
-                        const component_bitset = &frame_state.storages[storage_index].entity_bitset;
+                        const component_bitset = &frame_state.components[storage_index].entity_bitset;
                         result_entities = result_entities.intersectWith(component_bitset);
                     }
 
@@ -475,9 +473,9 @@ pub fn ECS(
                     };
                 }
 
-                pub fn next(self: *QuerySelf) ?createQueryResult(FrameStateType) {
+                pub fn next(self: *QuerySelf) ?generateQueryResult(FrameStateType) {
                     if (self.iterator.next()) |entity| {
-                        return createQueryResult(FrameStateType){
+                        return generateQueryResult(FrameStateType){
                             .frame_state = self.frame_state,
                             .entity = entity,
                         };
@@ -485,9 +483,9 @@ pub fn ECS(
                     return null;
                 }
 
-                pub fn nextFast(self: *QuerySelf) ?createQueryResult(FrameStateType) {
+                pub fn nextFast(self: *QuerySelf) ?generateQueryResult(FrameStateType) {
                     if (self.fast_iterator.next()) |entity| {
-                        return createQueryResult(FrameStateType){
+                        return generateQueryResult(FrameStateType){
                             .frame_state = self.frame_state,
                             .entity = entity,
                         };
@@ -507,7 +505,7 @@ pub fn ECS(
                 pub const Iterator = struct {
                     query: *QuerySelf,
 
-                    pub fn next(self: *Iterator) ?createQueryResult(FrameStateType) {
+                    pub fn next(self: *Iterator) ?generateQueryResult(FrameStateType) {
                         return self.query.next();
                     }
                 };
@@ -519,7 +517,7 @@ pub fn ECS(
                 pub const FastIterator = struct {
                     query: *QuerySelf,
 
-                    pub fn next(self: *FastIterator) ?createQueryResult(FrameStateType) {
+                    pub fn next(self: *FastIterator) ?generateQueryResult(FrameStateType) {
                         return self.query.nextFast();
                     }
                 };
@@ -530,7 +528,7 @@ pub fn ECS(
             };
         }
 
-        fn createQueryResult(comptime FrameStateType: type) type {
+        fn generateQueryResult(comptime FrameStateType: type) type {
             return struct {
                 frame_state: *FrameStateType,
                 entity: EntityID,
@@ -574,7 +572,7 @@ pub fn ECS(
                 return self.state.removeComponent(entity, T);
             }
 
-            pub fn query(self: *FrameSelf, comptime QueryTypes: []const type) !buildQuery(QueryTypes, FrameState) {
+            pub fn query(self: *FrameSelf, comptime QueryTypes: []const type) !generateQuery(QueryTypes, FrameState) {
                 return self.state.query(QueryTypes);
             }
 
@@ -582,8 +580,8 @@ pub fn ECS(
                 return self.state.getEntityCount();
             }
 
-            pub inline fn getStorage(self: *FrameSelf, comptime T: type) *StorageTypes[getComponentIndex(T)] {
-                return self.state.getStorage(T);
+            pub inline fn getComponentStorage(self: *FrameSelf, comptime T: type) *ComponentStorageTypes[getComponentIndex(T)] {
+                return self.state.getComponentStorage(T);
             }
         };
 
@@ -591,7 +589,7 @@ pub fn ECS(
 
         pub fn init(allocator: std.mem.Allocator) !Self {
             var frame_state = FrameState{
-                .storages = undefined,
+                .components = undefined,
                 .active_entities = EntityBitSet.initEmpty(),
                 .next_entity = 0,
                 .entity_count = 0,
@@ -601,7 +599,7 @@ pub fn ECS(
             };
 
             inline for (0..ComponentTypes.len) |i| {
-                frame_state.storages[i] = StorageTypes[i].init(allocator);
+                frame_state.components[i] = ComponentStorageTypes[i].init(allocator);
             }
 
             return Self{
@@ -617,7 +615,7 @@ pub fn ECS(
 
         pub fn deinit(self: *Self) void {
             inline for (0..ComponentTypes.len) |i| {
-                self.current_frame.state.storages[i].deinit();
+                self.current_frame.state.components[i].deinit();
             }
         }
 
@@ -644,9 +642,8 @@ pub fn ECS(
             
             // Component data (only actual used data)
             inline for (0..ComponentTypes.len) |i| {
-                const component_count = self.current_frame.state.storages[i].dense.items.len;
+                const component_count = self.current_frame.state.components[i].dense.items.len;
                 size += component_count * @sizeOf(ComponentTypes[i]);
-                size += component_count * @sizeOf(EntityID); // index_to_entity mapping
             }
             
             // Entity to component index mappings (fixed size)
@@ -658,7 +655,7 @@ pub fn ECS(
         pub fn saveFrame(self: *const Self, allocator: std.mem.Allocator) !Frame {
             var saved_frame = Frame{
                 .state = FrameState{
-                    .storages = undefined,
+                    .components = undefined,
                     .active_entities = self.current_frame.state.active_entities,
                     .next_entity = self.current_frame.state.next_entity,
                     .entity_count = self.current_frame.state.entity_count,
@@ -674,7 +671,7 @@ pub fn ECS(
 
             // When allocator is arena/fixed buffer, all data becomes contiguous!
             inline for (0..ComponentTypes.len) |i| {
-                saved_frame.state.storages[i] = StorageTypes[i].init(allocator);
+                saved_frame.state.components[i] = ComponentStorageTypes[i].init(allocator);
             }
 
             try saved_frame.state.copyFrom(&self.current_frame.state);
@@ -692,7 +689,7 @@ pub fn ECS(
 
         pub fn freeSavedFrame(saved_frame: *Frame) void {
             inline for (0..ComponentTypes.len) |i| {
-                saved_frame.state.storages[i].deinit();
+                saved_frame.state.components[i].deinit();
             }
         }
 
@@ -709,7 +706,7 @@ pub fn ECS(
         pub fn createPreAllocatedFrame(allocator: std.mem.Allocator) !Frame {
             var frame = Frame{
                 .state = FrameState{
-                    .storages = undefined,
+                    .components = undefined,
                     .active_entities = EntityBitSet.initEmpty(),
                     .next_entity = 0,
                     .entity_count = 0,
@@ -724,7 +721,7 @@ pub fn ECS(
             };
 
             inline for (0..ComponentTypes.len) |i| {
-                frame.state.storages[i] = StorageTypes[i].init(allocator);
+                frame.state.components[i] = ComponentStorageTypes[i].init(allocator);
             }
 
             return frame;
@@ -733,7 +730,7 @@ pub fn ECS(
         // Free a pre-allocated frame
         pub fn freePreAllocatedFrame(frame: *Frame) void {
             inline for (0..ComponentTypes.len) |i| {
-                frame.state.storages[i].deinit();
+                frame.state.components[i].deinit();
             }
         }
     };
