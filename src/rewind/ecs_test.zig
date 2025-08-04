@@ -1,6 +1,6 @@
 const std = @import("std");
 const testing = std.testing;
-const ecs = @import("ecs_optimized.zig");
+const ecs = @import("ecs.zig");
 
 // Test components
 const Position = struct { x: f32, y: f32 };

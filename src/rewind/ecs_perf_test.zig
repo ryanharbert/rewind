@@ -31,64 +31,96 @@ const GenericECS = ecs.ECS(.{
     .max_entities = .large, // 1024 entities to match optimized test
 });
 
-// System implementations using generic ECS
-fn updateTransformSystem(frame: *GenericECS.Frame) !void {
+// Ultra-optimized system implementations matching the specialized version exactly
+fn updateTransformSystem(frame: *GenericECS.Frame) void {
     const delta_time = frame.deltaTime;
     
-    // Direct storage access for performance
+    // Get direct access to storage arrays - same as specialized version
     const transform_storage = frame.getStorage(Transform);
     const velocity_storage = frame.getStorage(Velocity);
     
-    // Query for entities with both Transform and Velocity
-    var query = try frame.query(&.{ Transform, Velocity });
+    const transforms_dense = transform_storage.getDenseArray();
+    const transforms_entity_to_index = transform_storage.getEntityToIndexArray();
+    const velocities_dense = velocity_storage.getDenseArray();
+    const velocities_entity_to_index = velocity_storage.getEntityToIndexArray();
     
-    var iter = query.createIterator();
-    while (iter.next()) |result| {
-        // Use direct access methods - no safety checks
-        const transform = transform_storage.getDirect(result.entity);
-        const velocity = velocity_storage.getDirect(result.entity);
+    // In-place query computation (no allocations) - same as specialized version
+    frame.state.active_entities.intersectInto(&transform_storage.entity_bitset, &frame.state.query_result);
+    frame.state.query_result.intersectInto(&velocity_storage.entity_bitset, &frame.state.query_temp);
+    
+    // Direct iteration over bitset words - same as specialized version
+    const words = frame.state.query_temp.words;
+    for (words, 0..) |word, word_index| {
+        if (word == 0) continue;
         
-        // Update transform
-        transform.x += velocity.dx * delta_time;
-        transform.y += velocity.dy * delta_time;
-        transform.rotation += velocity.angular * delta_time;
+        var current_word = word;
+        const base_index = @as(u32, @intCast(word_index * 64));
         
-        // Keep rotation in bounds
-        if (transform.rotation > 360.0) {
-            transform.rotation -= 360.0;
-        } else if (transform.rotation < 0.0) {
-            transform.rotation += 360.0;
+        while (current_word != 0) {
+            const bit_index = @ctz(current_word);
+            const entity = base_index + bit_index;
+            
+            // Direct component access (guaranteed to exist) - same as specialized version
+            const transform = &transforms_dense[transforms_entity_to_index[entity]];
+            const velocity = &velocities_dense[velocities_entity_to_index[entity]];
+            
+            // Update transform
+            transform.x += velocity.dx * delta_time;
+            transform.y += velocity.dy * delta_time;
+            transform.rotation += velocity.angular * delta_time;
+            
+            // Keep rotation in bounds
+            if (transform.rotation > 360.0) {
+                transform.rotation -= 360.0;
+            } else if (transform.rotation < 0.0) {
+                transform.rotation += 360.0;
+            }
+            
+            current_word &= current_word - 1; // Clear lowest bit
         }
     }
 }
 
-fn damageSystem(frame: *GenericECS.Frame) !void {
-    // Direct storage access for performance
+fn damageSystem(frame: *GenericECS.Frame) void {
+    // Get direct access to storage arrays
     const health_storage = frame.getStorage(Health);
+    const healths_dense = health_storage.getDenseArray();
+    const healths_entity_to_index = health_storage.getEntityToIndexArray();
     
-    // Query for entities with Health
-    var query = try frame.query(&.{Health});
+    // In-place query
+    frame.state.active_entities.intersectInto(&health_storage.entity_bitset, &frame.state.query_result);
     
-    var iter = query.createIterator();
-    while (iter.next()) |result| {
-        // Use direct access method - no safety checks
-        const health = health_storage.getDirect(result.entity);
+    // Direct iteration
+    const words = frame.state.query_result.words;
+    for (words, 0..) |word, word_index| {
+        if (word == 0) continue;
         
-        health.current -= 1;
-        if (health.current < 0) {
-            health.current = health.max;
+        var current_word = word;
+        const base_index = @as(u32, @intCast(word_index * 64));
+        
+        while (current_word != 0) {
+            const bit_index = @ctz(current_word);
+            const entity = base_index + bit_index;
+            
+            // Direct component access
+            const health = &healths_dense[healths_entity_to_index[entity]];
+            
+            health.current -= 1;
+            if (health.current < 0) {
+                health.current = health.max;
+            }
+            
+            current_word &= current_word - 1;
         }
     }
 }
 
 pub fn main() !void {
-    // Use general purpose allocator for now
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    // Use page allocator for fair comparison
+    const allocator = std.heap.page_allocator;
     
-    std.debug.print("=== Generic ECS Performance Test (Using rewind/ecs.zig) ===\n", .{});
-    std.debug.print("Testing with standard generic ECS implementation\n\n", .{});
+    std.debug.print("=== Ultra-Optimized Generic ECS Performance Test ===\n", .{});
+    std.debug.print("Testing with specialized-level optimizations\n\n", .{});
     
     const entity_counts = [_]u32{ 100, 250, 500, 750, 1000 };
     const frame_count = 10000;
@@ -141,8 +173,8 @@ pub fn main() !void {
         // Warm up
         for (0..100) |_| {
             generic_ecs.update(.{ .deltaTime = 0.016 }, 0.016, 0.0);
-            try updateTransformSystem(frame);
-            try damageSystem(frame);
+            updateTransformSystem(frame);
+            damageSystem(frame);
         }
         
         // Get initial values for verification
@@ -157,8 +189,8 @@ pub fn main() !void {
         
         for (0..frame_count) |_| {
             generic_ecs.update(.{ .deltaTime = 0.016 }, 0.016, 0.0);
-            try updateTransformSystem(frame);
-            try damageSystem(frame);
+            updateTransformSystem(frame);
+            damageSystem(frame);
         }
         
         const bench_time_ns = std.time.nanoTimestamp() - bench_start;
@@ -184,5 +216,5 @@ pub fn main() !void {
         }
     }
     
-    std.debug.print("\n=== End of Generic ECS Performance Test ===\n", .{});
+    std.debug.print("\n=== End of Ultra-Optimized Generic ECS Performance Test ===\n", .{});
 }

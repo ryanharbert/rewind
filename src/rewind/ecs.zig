@@ -18,12 +18,173 @@ pub const EntityLimit = enum(u16) {
     }
 };
 
+/// High-performance bitset with direct word access
+fn BitSet(comptime size: u32) type {
+    return struct {
+        const Self = @This();
+        const word_count = (size + 63) / 64;
+        
+        words: [word_count]u64,
+        
+        pub fn initEmpty() Self {
+            return Self{
+                .words = [_]u64{0} ** word_count,
+            };
+        }
+        
+        pub fn initFull() Self {
+            var self = Self{
+                .words = [_]u64{std.math.maxInt(u64)} ** word_count,
+            };
+            // Clear bits beyond size in the last word
+            const remainder = size % 64;
+            if (remainder != 0) {
+                const mask = (@as(u64, 1) << @intCast(remainder)) - 1;
+                self.words[word_count - 1] &= mask;
+            }
+            return self;
+        }
+        
+        pub inline fn set(self: *Self, index: u32) void {
+            if (index >= size) return;
+            const word_index = index >> 6;
+            const bit_index = @as(u6, @intCast(index & 63));
+            self.words[word_index] |= @as(u64, 1) << bit_index;
+        }
+        
+        pub inline fn unset(self: *Self, index: u32) void {
+            if (index >= size) return;
+            const word_index = index >> 6;
+            const bit_index = @as(u6, @intCast(index & 63));
+            self.words[word_index] &= ~(@as(u64, 1) << bit_index);
+        }
+        
+        pub inline fn isSet(self: *const Self, index: u32) bool {
+            if (index >= size) return false;
+            const word_index = index >> 6;
+            const bit_index = @as(u6, @intCast(index & 63));
+            return (self.words[word_index] & (@as(u64, 1) << bit_index)) != 0;
+        }
+        
+        pub inline fn toggle(self: *Self, index: u32) void {
+            if (index >= size) return;
+            const word_index = index >> 6;
+            const bit_index = @as(u6, @intCast(index & 63));
+            self.words[word_index] ^= @as(u64, 1) << bit_index;
+        }
+        
+        pub fn clear(self: *Self) void {
+            @memset(&self.words, 0);
+        }
+        
+        pub fn count(self: *const Self) u32 {
+            var total: u32 = 0;
+            for (self.words) |word| {
+                total += @popCount(word);
+            }
+            return total;
+        }
+        
+        pub fn intersectWith(self: *const Self, other: *const Self) Self {
+            var result = Self.initEmpty();
+            for (0..word_count) |i| {
+                result.words[i] = self.words[i] & other.words[i];
+            }
+            return result;
+        }
+
+        pub fn intersectInto(self: *const Self, other: *const Self, result: *Self) void {
+            for (0..word_count) |i| {
+                result.words[i] = self.words[i] & other.words[i];
+            }
+        }
+        
+        pub fn copyFrom(self: *Self, other: *const Self) void {
+            @memcpy(&self.words, &other.words);
+        }
+        
+        // Standard iterator for compatibility
+        pub const Iterator = struct {
+            bitset: *const Self,
+            index: u32,
+            
+            const IteratorOptions = struct {};
+            
+            pub fn next(self: *Iterator) ?u32 {
+                while (self.index < size) {
+                    const current = self.index;
+                    self.index += 1;
+                    if (self.bitset.isSet(current)) {
+                        return current;
+                    }
+                }
+                return null;
+            }
+        };
+        
+        pub fn iterator(self: *const Self, _: Iterator.IteratorOptions) Iterator {
+            return Iterator{
+                .bitset = self,
+                .index = 0,
+            };
+        }
+        
+        // Fast word-based iterator
+        pub const FastIterator = struct {
+            bitset: *const Self,
+            word_index: usize,
+            current_word: u64,
+            base_index: u32,
+            
+            pub fn init(bitset: *const Self) FastIterator {
+                var iter = FastIterator{
+                    .bitset = bitset,
+                    .word_index = 0,
+                    .current_word = if (word_count > 0) bitset.words[0] else 0,
+                    .base_index = 0,
+                };
+                // Skip empty words at start
+                while (iter.word_index < word_count and iter.current_word == 0) {
+                    iter.word_index += 1;
+                    if (iter.word_index < word_count) {
+                        iter.current_word = bitset.words[iter.word_index];
+                        iter.base_index = @intCast(iter.word_index * 64);
+                    }
+                }
+                return iter;
+            }
+            
+            pub inline fn next(self: *FastIterator) ?u32 {
+                while (self.word_index < word_count) {
+                    if (self.current_word != 0) {
+                        const bit_index = @ctz(self.current_word);
+                        const entity = self.base_index + bit_index;
+                        self.current_word &= self.current_word - 1;
+                        return entity;
+                    }
+                    
+                    self.word_index += 1;
+                    if (self.word_index < word_count) {
+                        self.current_word = self.bitset.words[self.word_index];
+                        self.base_index = @intCast(self.word_index * 64);
+                    }
+                }
+                return null;
+            }
+        };
+        
+        pub fn fastIterator(self: *const Self) FastIterator {
+            return FastIterator.init(self);
+        }
+    };
+}
+
 /// Generic bitset ECS - generates specialized ECS implementation at compile time
 pub fn ECS(
     comptime config: struct {
-        components: []const type, // Array of component types to register
-        input: type, // Input type for frame context
-        max_entities: EntityLimit = .medium, // Entity limit (defaults to 512)
+        components: []const type,
+        input: type,
+        max_entities: EntityLimit = .medium,
     },
 ) type {
     const ComponentTypes = config.components;
@@ -42,20 +203,14 @@ pub fn ECS(
 
     return struct {
         const Self = @This();
+        const EntityBitSet = BitSet(MAX_ENTITIES);
 
         /// Generate component storage type for a specific component
         fn generateComponentStorage(comptime T: type) type {
             return struct {
-                /// Dense array of components - same as sparse set
                 dense: std.ArrayList(T),
-
-                /// Bitset tracking which entities have this component - replaces HashMap
-                entity_bitset: std.bit_set.IntegerBitSet(MAX_ENTITIES),
-
-                /// Fixed array mapping entity -> dense index - replaces HashMap
+                entity_bitset: EntityBitSet,
                 entity_to_index: [MAX_ENTITIES]u32,
-
-                /// Reverse mapping for efficient removal - same concept as sparse set
                 index_to_entity: std.ArrayList(EntityID),
 
                 const StorageSelf = @This();
@@ -63,7 +218,7 @@ pub fn ECS(
                 pub fn init(allocator: std.mem.Allocator) StorageSelf {
                     return StorageSelf{
                         .dense = std.ArrayList(T).init(allocator),
-                        .entity_bitset = std.bit_set.IntegerBitSet(MAX_ENTITIES).initEmpty(),
+                        .entity_bitset = EntityBitSet.initEmpty(),
                         .entity_to_index = [_]u32{0} ** MAX_ENTITIES,
                         .index_to_entity = std.ArrayList(EntityID).init(allocator),
                     };
@@ -80,7 +235,7 @@ pub fn ECS(
                             "Increase max_entities in ECS config (current: {s})", .{ entity, MAX_ENTITIES, @tagName(config.max_entities) });
                         return error.EntityLimitExceeded;
                     }
-                    if (self.entity_bitset.isSet(entity)) return; // Already exists
+                    if (self.entity_bitset.isSet(entity)) return;
 
                     const index = @as(u32, @intCast(self.dense.items.len));
                     try self.dense.append(component);
@@ -109,7 +264,6 @@ pub fn ECS(
                     const index = self.entity_to_index[entity];
                     const last_index = self.dense.items.len - 1;
 
-                    // Swap with last element for O(1) removal
                     if (index != last_index) {
                         const last_entity = self.index_to_entity.items[last_index];
                         self.dense.items[index] = self.dense.items[last_index];
@@ -128,7 +282,7 @@ pub fn ECS(
                     return @intCast(self.dense.items.len);
                 }
 
-                // Direct access methods for hot paths - no safety checks
+                // Direct access methods for hot paths
                 pub inline fn getDirect(self: *StorageSelf, entity: EntityID) *T {
                     const index = self.entity_to_index[entity];
                     return &self.dense.items[index];
@@ -138,10 +292,18 @@ pub fn ECS(
                     const index = self.entity_to_index[entity];
                     return &self.dense.items[index];
                 }
+
+                // Expose raw arrays for maximum performance direct access
+                pub inline fn getDenseArray(self: *StorageSelf) []T {
+                    return self.dense.items;
+                }
+
+                pub inline fn getEntityToIndexArray(self: *StorageSelf) *[MAX_ENTITIES]u32 {
+                    return &self.entity_to_index;
+                }
             };
         }
 
-        // Generate storage types at compile time - same as sparse set approach
         const StorageTypes = blk: {
             var storage_types: [ComponentTypes.len]type = undefined;
             for (ComponentTypes, 0..) |T, i| {
@@ -159,23 +321,20 @@ pub fn ECS(
                 "components = &.{ Position, Velocity, " ++ @typeName(T) ++ " }");
         }
 
-        /// FrameState contains all ECS data - same structure as sparse set version
         pub const FrameState = struct {
-            /// Component storages - one per component type
             storages: std.meta.Tuple(&StorageTypes),
-
-            /// Entity management - bitset instead of counter
-            active_entities: std.bit_set.IntegerBitSet(MAX_ENTITIES),
+            active_entities: EntityBitSet,
             next_entity: EntityID,
             entity_count: u32,
             allocator: std.mem.Allocator,
 
+            // Pre-allocated bitsets for query operations - no allocations during queries
+            query_result: EntityBitSet,
+            query_temp: EntityBitSet,
+
             const FrameStateSelf = @This();
 
-            // ===== ENTITY MANAGEMENT =====
-
             pub fn createEntity(self: *FrameStateSelf) !EntityID {
-                // Find next available entity ID
                 var entity = self.next_entity;
                 while (entity < MAX_ENTITIES and self.active_entities.isSet(entity)) {
                     entity += 1;
@@ -198,7 +357,6 @@ pub fn ECS(
                 if (entity >= MAX_ENTITIES) return;
                 if (!self.active_entities.isSet(entity)) return;
 
-                // Remove from all component storages
                 inline for (0..ComponentTypes.len) |i| {
                     _ = self.storages[i].remove(entity);
                 }
@@ -207,12 +365,9 @@ pub fn ECS(
                 self.entity_count -= 1;
             }
 
-            // ===== COMPONENT API - Same interface as sparse set =====
-
             pub fn addComponent(self: *FrameStateSelf, entity: EntityID, component: anytype) !void {
                 const T = @TypeOf(component);
                 
-                // Debug-only bounds check - zero overhead in release builds
                 if (builtin.mode == .Debug) {
                     if (entity >= MAX_ENTITIES) {
                         std.log.err("Cannot add component to entity {}: entity ID out of bounds (max: {})", .{ entity, MAX_ENTITIES });
@@ -247,44 +402,31 @@ pub fn ECS(
                 return self.storages[storage_index].remove(entity);
             }
 
-            // ===== QUERY API - Much simpler than sparse set! =====
-
             pub fn query(self: *FrameStateSelf, comptime QueryTypes: []const type) !buildQuery(QueryTypes, FrameStateSelf) {
                 return buildQuery(QueryTypes, FrameStateSelf).init(self);
             }
-
-            // ===== UTILITY FUNCTIONS =====
 
             pub fn getEntityCount(self: *const FrameStateSelf) u32 {
                 return self.entity_count;
             }
 
-            // Direct storage access for performance-critical code
             pub inline fn getStorage(self: *FrameStateSelf, comptime T: type) *StorageTypes[getComponentIndex(T)] {
                 const storage_index = comptime getComponentIndex(T);
                 return &self.storages[storage_index];
             }
 
-
-            // ===== ROLLBACK SUPPORT =====
-
             pub fn copyFrom(self: *FrameStateSelf, other: *const FrameStateSelf) !void {
-                self.active_entities = other.active_entities;
+                self.active_entities.copyFrom(&other.active_entities);
                 self.next_entity = other.next_entity;
                 self.entity_count = other.entity_count;
 
-                // Copy all component storages
                 inline for (0..ComponentTypes.len) |i| {
                     const other_storage = &other.storages[i];
                     var storage = &self.storages[i];
 
-                    // Copy bitset
-                    storage.entity_bitset = other_storage.entity_bitset;
-
-                    // Copy entity mappings
+                    storage.entity_bitset.copyFrom(&other_storage.entity_bitset);
                     storage.entity_to_index = other_storage.entity_to_index;
 
-                    // Copy dense arrays
                     storage.dense.clearRetainingCapacity();
                     try storage.dense.appendSlice(other_storage.dense.items);
 
@@ -294,36 +436,44 @@ pub fn ECS(
             }
         };
 
-        /// Query builder - creates optimized query using bitset intersection
         fn buildQuery(comptime QueryTypes: []const type, comptime FrameStateType: type) type {
             return struct {
                 const QuerySelf = @This();
 
-                result_entities: std.bit_set.IntegerBitSet(MAX_ENTITIES),
-                iterator: std.bit_set.IntegerBitSet(MAX_ENTITIES).Iterator(.{}),
+                result_entities: EntityBitSet,
+                iterator: EntityBitSet.Iterator,
+                fast_iterator: EntityBitSet.FastIterator,
                 frame_state: *FrameStateType,
 
                 pub fn init(frame_state: *FrameStateType) QuerySelf {
-                    // Start with active entities
                     var result_entities = frame_state.active_entities;
 
-                    // Intersect with required component bitsets - SIMD fast!
                     inline for (QueryTypes) |T| {
                         const storage_index = comptime getComponentIndex(T);
-                        const component_bitset = frame_state.storages[storage_index].entity_bitset;
+                        const component_bitset = &frame_state.storages[storage_index].entity_bitset;
                         result_entities = result_entities.intersectWith(component_bitset);
                     }
 
                     return QuerySelf{
                         .result_entities = result_entities,
                         .iterator = result_entities.iterator(.{}),
+                        .fast_iterator = result_entities.fastIterator(),
                         .frame_state = frame_state,
                     };
                 }
 
                 pub fn next(self: *QuerySelf) ?createQueryResult(FrameStateType) {
-                    if (self.iterator.next()) |entity_index| {
-                        const entity = @as(EntityID, @intCast(entity_index));
+                    if (self.iterator.next()) |entity| {
+                        return createQueryResult(FrameStateType){
+                            .frame_state = self.frame_state,
+                            .entity = entity,
+                        };
+                    }
+                    return null;
+                }
+
+                pub fn nextFast(self: *QuerySelf) ?createQueryResult(FrameStateType) {
+                    if (self.fast_iterator.next()) |entity| {
                         return createQueryResult(FrameStateType){
                             .frame_state = self.frame_state,
                             .entity = entity,
@@ -333,14 +483,14 @@ pub fn ECS(
                 }
 
                 pub fn count(self: *QuerySelf) u32 {
-                    return @intCast(self.result_entities.count());
+                    return self.result_entities.count();
                 }
 
                 pub fn reset(self: *QuerySelf) void {
                     self.iterator = self.result_entities.iterator(.{});
+                    self.fast_iterator = self.result_entities.fastIterator();
                 }
 
-                // Zero-cost iterator for for-loops
                 pub const Iterator = struct {
                     query: *QuerySelf,
 
@@ -353,20 +503,20 @@ pub fn ECS(
                     return .{ .query = self };
                 }
 
-                // Execute a function for each entity in the query - optimized path
-                pub inline fn forEach(self: *QuerySelf, comptime func: fn(*FrameStateType, EntityID) void) void {
-                    var iter = self.result_entities.iterator(.{});
-                    while (iter.next()) |entity_index| {
-                        const entity = @as(EntityID, @intCast(entity_index));
-                        func(self.frame_state, entity);
-                    }
-                }
+                pub const FastIterator = struct {
+                    query: *QuerySelf,
 
-                // No deinit needed - everything is stack allocated!
+                    pub fn next(self: *FastIterator) ?createQueryResult(FrameStateType) {
+                        return self.query.nextFast();
+                    }
+                };
+
+                pub fn createFastIterator(self: *QuerySelf) FastIterator {
+                    return .{ .query = self };
+                }
             };
         }
 
-        /// Generate query result type for component access
         fn createQueryResult(comptime FrameStateType: type) type {
             return struct {
                 frame_state: *FrameStateType,
@@ -378,7 +528,6 @@ pub fn ECS(
             };
         }
 
-        /// Frame contains FrameState + context - identical to sparse set version
         pub const Frame = struct {
             state: FrameState,
             input: InputType,
@@ -388,7 +537,6 @@ pub fn ECS(
 
             const FrameSelf = @This();
 
-            // All methods delegate to state - same as sparse set
             pub fn createEntity(self: *FrameSelf) !EntityID {
                 return self.state.createEntity();
             }
@@ -421,25 +569,24 @@ pub fn ECS(
                 return self.state.getEntityCount();
             }
 
-            // Direct storage access for performance-critical code
             pub inline fn getStorage(self: *FrameSelf, comptime T: type) *StorageTypes[getComponentIndex(T)] {
                 return self.state.getStorage(T);
             }
         };
 
-        // ECS container - same as sparse set
         current_frame: Frame,
 
         pub fn init(allocator: std.mem.Allocator) !Self {
             var frame_state = FrameState{
                 .storages = undefined,
-                .active_entities = std.bit_set.IntegerBitSet(MAX_ENTITIES).initEmpty(),
+                .active_entities = EntityBitSet.initEmpty(),
                 .next_entity = 0,
                 .entity_count = 0,
                 .allocator = allocator,
+                .query_result = EntityBitSet.initEmpty(),
+                .query_temp = EntityBitSet.initEmpty(),
             };
 
-            // Initialize all component storages
             inline for (0..ComponentTypes.len) |i| {
                 frame_state.storages[i] = StorageTypes[i].init(allocator);
             }
@@ -472,7 +619,6 @@ pub fn ECS(
             self.current_frame.frame_number += 1;
         }
 
-        // Rollback support - same interface as sparse set
         pub fn saveFrame(self: *const Self, allocator: std.mem.Allocator) !Frame {
             var saved_frame = Frame{
                 .state = FrameState{
@@ -481,6 +627,8 @@ pub fn ECS(
                     .next_entity = self.current_frame.state.next_entity,
                     .entity_count = self.current_frame.state.entity_count,
                     .allocator = allocator,
+                    .query_result = EntityBitSet.initEmpty(),
+                    .query_temp = EntityBitSet.initEmpty(),
                 },
                 .input = self.current_frame.input,
                 .deltaTime = self.current_frame.deltaTime,
@@ -488,12 +636,10 @@ pub fn ECS(
                 .frame_number = self.current_frame.frame_number,
             };
 
-            // Initialize storages for saved frame
             inline for (0..ComponentTypes.len) |i| {
                 saved_frame.state.storages[i] = StorageTypes[i].init(allocator);
             }
 
-            // Copy all data
             try saved_frame.state.copyFrom(&self.current_frame.state);
 
             return saved_frame;
