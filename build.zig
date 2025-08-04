@@ -20,22 +20,29 @@ pub fn build(b: *std.Build) void {
     // Add Sokol module
     rewind_exe.root_module.addImport("sokol", sokol_module);
     
-    // Add C source files directly
+    // Determine backend based on target
+    const sokol_flags = switch (target.result.os.tag) {
+        .windows => &[_][]const u8{ "-DIMPL", "-DSOKOL_D3D11" },
+        .macos, .ios => &[_][]const u8{ "-DIMPL", "-DSOKOL_METAL" }, 
+        .linux => &[_][]const u8{ "-DIMPL", "-DSOKOL_GLCORE" },
+        .wasi, .emscripten => &[_][]const u8{ "-DIMPL", "-DSOKOL_WGPU" },
+        else => &[_][]const u8{ "-DIMPL", "-DSOKOL_GLCORE" },
+    };
     rewind_exe.addCSourceFile(.{
         .file = b.path("libs/sokol/src/sokol/c/sokol_log.c"),
-        .flags = &.{ "-DIMPL", "-DSOKOL_D3D11" },
+        .flags = sokol_flags,
     });
     rewind_exe.addCSourceFile(.{
         .file = b.path("libs/sokol/src/sokol/c/sokol_app.c"),
-        .flags = &.{ "-DIMPL", "-DSOKOL_D3D11" },
+        .flags = sokol_flags,
     });
     rewind_exe.addCSourceFile(.{
         .file = b.path("libs/sokol/src/sokol/c/sokol_gfx.c"),
-        .flags = &.{ "-DIMPL", "-DSOKOL_D3D11" },
+        .flags = sokol_flags,
     });
     rewind_exe.addCSourceFile(.{
         .file = b.path("libs/sokol/src/sokol/c/sokol_glue.c"),
-        .flags = &.{ "-DIMPL", "-DSOKOL_D3D11" },
+        .flags = sokol_flags,
     });
     
     // Add STB Image
@@ -45,12 +52,29 @@ pub fn build(b: *std.Build) void {
         .flags = &.{"-std=c99"},
     });
     
-    // Link system libraries for Windows D3D11
-    rewind_exe.linkSystemLibrary("d3d11");
-    rewind_exe.linkSystemLibrary("dxgi");
-    rewind_exe.linkSystemLibrary("user32");
-    rewind_exe.linkSystemLibrary("gdi32");
-    rewind_exe.linkSystemLibrary("ole32");
+    // Link system libraries based on platform
+    switch (target.result.os.tag) {
+        .windows => {
+            rewind_exe.linkSystemLibrary("d3d11");
+            rewind_exe.linkSystemLibrary("dxgi");
+            rewind_exe.linkSystemLibrary("user32");
+            rewind_exe.linkSystemLibrary("gdi32");
+            rewind_exe.linkSystemLibrary("ole32");
+        },
+        .macos, .ios => {
+            rewind_exe.linkFramework("Cocoa");
+            rewind_exe.linkFramework("QuartzCore");
+            rewind_exe.linkFramework("Metal");
+            rewind_exe.linkFramework("MetalKit");
+        },
+        .linux => {
+            rewind_exe.linkSystemLibrary("GL");
+            rewind_exe.linkSystemLibrary("X11");
+            rewind_exe.linkSystemLibrary("Xi");
+            rewind_exe.linkSystemLibrary("Xcursor");
+        },
+        else => {},
+    }
     rewind_exe.linkLibC();
     
     b.installArtifact(rewind_exe);

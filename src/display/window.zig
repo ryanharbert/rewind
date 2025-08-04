@@ -9,6 +9,9 @@ pub const WindowConfig = struct {
     height: u32 = 600,
     title: [:0]const u8 = "Rewind Game",
     vsync: bool = true,
+    init_cb: ?*const fn() callconv(.C) void = null,
+    frame_cb: ?*const fn() callconv(.C) void = null,
+    cleanup_cb: ?*const fn() callconv(.C) void = null,
 };
 
 pub const Window = struct {
@@ -51,9 +54,9 @@ pub const Window = struct {
     
     pub fn run(self: *Window) void {
         sapp.run(.{
-            .init_cb = init_cb,
-            .frame_cb = frame_cb,
-            .cleanup_cb = cleanup_cb,
+            .init_cb = self.config.init_cb orelse default_init_cb,
+            .frame_cb = self.config.frame_cb orelse default_frame_cb,
+            .cleanup_cb = self.config.cleanup_cb orelse default_cleanup_cb,
             .width = @intCast(self.config.width),
             .height = @intCast(self.config.height),
             .window_title = self.config.title.ptr,
@@ -62,29 +65,29 @@ pub const Window = struct {
     }
 };
 
-// Sokol App callbacks - need export for C interop
-export fn init_cb() void {
+// Default callbacks if none provided
+export fn default_init_cb() void {
     sg.setup(.{
         .environment = sglue.environment(),
     });
 }
 
-export fn frame_cb() void {
+export fn default_frame_cb() void {
     // Clear to a nice blue color  
     sg.beginPass(.{
+        .swapchain = sglue.swapchain(),
         .action = .{
             .colors = .{
                 .{ .load_action = .CLEAR, .clear_value = .{ .r = 0.2, .g = 0.4, .b = 0.8, .a = 1.0 } },
                 .{}, .{}, .{},
             },
         },
-        .swapchain = sglue.swapchain(),
     });
     
     sg.endPass();
     sg.commit();
 }
 
-export fn cleanup_cb() void {
+export fn default_cleanup_cb() void {
     sg.shutdown();
 }
