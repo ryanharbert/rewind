@@ -49,7 +49,7 @@ pub const SpriteRenderer = struct {
     shader: sg.Shader,
     pipeline: sg.Pipeline,
     vertex_buffer: sg.Buffer,
-    instance_buffer: sg.Buffer,
+    instance_buffers: [8]sg.Buffer, // Multiple instance buffers to avoid update conflicts
     sampler: sg.Sampler,
     
     // Textures
@@ -64,11 +64,14 @@ pub const SpriteRenderer = struct {
             .data = sg.asRange(&quad_vertices),
         });
         
-        // Create dynamic instance buffer
-        const instance_buffer = sg.makeBuffer(.{
-            .size = MAX_SPRITES * @sizeOf(SpriteInstance),
-            .usage = .{ .dynamic_update = true },
-        });
+        // Create multiple dynamic instance buffers
+        var instance_buffers: [8]sg.Buffer = undefined;
+        for (&instance_buffers) |*buffer| {
+            buffer.* = sg.makeBuffer(.{
+                .size = MAX_SPRITES * @sizeOf(SpriteInstance),
+                .usage = .{ .dynamic_update = true },
+            });
+        }
         
         // Create shader using the standard sokol approach
         const shader = sg.makeShader(shd.spriteShaderDesc(sg.queryBackend()));
@@ -105,7 +108,7 @@ pub const SpriteRenderer = struct {
             .shader = shader,
             .pipeline = pipeline,
             .vertex_buffer = vertex_buffer,
-            .instance_buffer = instance_buffer,
+            .instance_buffers = instance_buffers,
             .sampler = sampler,
             .textures = std.ArrayList(sg.Image).init(allocator),
             .sprites = std.ArrayList(Sprite).init(allocator),
@@ -114,7 +117,9 @@ pub const SpriteRenderer = struct {
     
     pub fn deinit(self: *SpriteRenderer) void {
         sg.destroyBuffer(self.vertex_buffer);
-        sg.destroyBuffer(self.instance_buffer);
+        for (self.instance_buffers) |buffer| {
+            sg.destroyBuffer(buffer);
+        }
         sg.destroyPipeline(self.pipeline);
         sg.destroyShader(self.shader);
         sg.destroySampler(self.sampler);
@@ -144,7 +149,9 @@ pub const SpriteRenderer = struct {
         });
         
         try self.textures.append(sg_image);
-        return @intCast(self.textures.items.len - 1);
+        const texture_id = @as(u32, @intCast(self.textures.items.len - 1));
+        std.debug.print("Loaded texture {} ({}x{}) at index {}\n", .{ self.textures.items.len, image.width, image.height, texture_id });
+        return texture_id;
     }
     
     pub fn drawSprite(self: *SpriteRenderer, sprite: Sprite) !void {
@@ -154,35 +161,46 @@ pub const SpriteRenderer = struct {
     pub fn render(self: *SpriteRenderer, projection: [16]f32) void {
         if (self.sprites.items.len == 0) return;
         
-        // Build instance data
-        var instances: [MAX_SPRITES]SpriteInstance = undefined;
-        for (self.sprites.items, 0..) |sprite, i| {
-            instances[i] = .{
-                .pos_size = .{ sprite.position.x, sprite.position.y, sprite.size.x, sprite.size.y },
-                .color = .{ sprite.color.r, sprite.color.g, sprite.color.b, sprite.color.a },
-            };
-        }
-        
-        // Update instance buffer
-        const instance_data = instances[0..self.sprites.items.len];
-        sg.updateBuffer(self.instance_buffer, sg.asRange(instance_data));
-        
-        // Apply pipeline
+        // Apply pipeline and uniforms once
         sg.applyPipeline(self.pipeline);
-        
-        // Set projection matrix using shader's uniform slot
         sg.applyUniforms(shd.SLOT_vs_params, sg.asRange(&projection));
         
-        // For now, draw all sprites with first texture (we'll optimize this later)
-        if (self.textures.items.len > 0) {
+        // Render each texture group separately using different instance buffers
+        for (0..self.textures.items.len) |texture_id| {
+            // Collect only sprites for this texture
+            var batch_instances: [MAX_SPRITES]SpriteInstance = undefined;
+            var batch_count: u32 = 0;
+            
+            for (self.sprites.items) |sprite| {
+                if (sprite.texture_id == texture_id) {
+                    batch_instances[batch_count] = .{
+                        .pos_size = .{ sprite.position.x, sprite.position.y, sprite.size.x, sprite.size.y },
+                        .color = .{ sprite.color.r, sprite.color.g, sprite.color.b, sprite.color.a },
+                    };
+                    batch_count += 1;
+                }
+            }
+            
+            // Skip if no sprites use this texture
+            if (batch_count == 0) continue;
+            
+            // Use a different instance buffer for each texture to avoid conflicts
+            const buffer_index = texture_id % self.instance_buffers.len;
+            const current_buffer = self.instance_buffers[buffer_index];
+            
+            // Update buffer with only this batch's instances
+            const batch_data = batch_instances[0..batch_count];
+            sg.updateBuffer(current_buffer, sg.asRange(batch_data));
+            
+            // Bind this texture and the corresponding instance buffer
             sg.applyBindings(.{
-                .vertex_buffers = .{ self.vertex_buffer, self.instance_buffer, .{}, .{}, .{}, .{}, .{}, .{} },
-                .images = .{ self.textures.items[0], .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{} },
+                .vertex_buffers = .{ self.vertex_buffer, current_buffer, .{}, .{}, .{}, .{}, .{}, .{} },
+                .images = .{ self.textures.items[texture_id], .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{} },
                 .samplers = .{ self.sampler, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{}, .{} },
             });
             
-            // Draw instanced: 6 vertices per quad, N instances
-            sg.draw(0, 6, @intCast(self.sprites.items.len));
+            // Draw only this batch
+            sg.draw(0, 6, @intCast(batch_count));
         }
         
         // Clear for next frame

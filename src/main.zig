@@ -56,22 +56,22 @@ fn gameUpdate(engine: *rewind.Rewind, dt: f32) void {
 }
 
 fn gameRender(engine: *rewind.Rewind) void {
-    // Draw sprites side by side with high contrast colors
-    if (player_texture_id >= 0) { // Texture ID 0 is valid
-        // First sprite - bright yellow
+    // Draw player and enemy sprites side by side
+    if (player_texture_id >= 0 and enemy_texture_id >= 0) {
+        // Player sprite - white to show actual texture
         engine.drawSprite(.{
             .position = .{ .x = 300, .y = 200 },
             .size = .{ .x = 128, .y = 128 },
-            .color = .{ .r = 1, .g = 1, .b = 0, .a = 1 },
-            .texture_id = 0,
+            .color = .{ .r = 1, .g = 1, .b = 1, .a = 1 }, // Pure white
+            .texture_id = player_texture_id,
         }) catch {};
         
-        // Second sprite - bright magenta  
+        // Enemy sprite - white to show actual texture
         engine.drawSprite(.{
             .position = .{ .x = 450, .y = 200 },
             .size = .{ .x = 128, .y = 128 },
-            .color = .{ .r = 1, .g = 0, .b = 1, .a = 1 },
-            .texture_id = 0,
+            .color = .{ .r = 1, .g = 1, .b = 1, .a = 1 }, // Pure white
+            .texture_id = enemy_texture_id,
         }) catch {};
     }
 }
