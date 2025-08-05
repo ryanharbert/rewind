@@ -1,130 +1,83 @@
 const std = @import("std");
-const window = @import("display/window.zig");
-const assets = @import("display/assets.zig");
-const renderer = @import("display/renderer.zig");
-const camera = @import("display/camera.zig");
+const rewind = @import("rewind.zig");
 
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-var sprite_renderer: renderer.SpriteRenderer = undefined;
-var main_camera: camera.Camera = undefined;
+// Game state
 var player_texture_id: u32 = 0;
 var enemy_texture_id: u32 = 0;
 
 pub fn main() !void {
     std.debug.print("Starting Rewind...\n", .{});
     
-    var win = try window.Window.init(.{
-        .width = 800,
-        .height = 600,
-        .title = "Rewind Game",
-        .init_cb = init,
-        .frame_cb = frame,
-        .cleanup_cb = cleanup,
+    // Create engine with config and callbacks
+    var engine = try rewind.Rewind.init(.{
+        .window_width = 800,
+        .window_height = 600,
+        .window_title = "Rewind Game",
+        .asset_path = "assets",
+        .vsync = true,
+    }, .{
+        .init = gameInit,
+        .update = gameUpdate,
+        .render = gameRender,
+        .cleanup = gameCleanup,
     });
-    defer win.deinit();
+    defer engine.deinit();
     
-    std.debug.print("Running Sokol window...\n", .{});
+    std.debug.print("Running Rewind engine...\n", .{});
     
-    // Sokol App takes control of the main loop
-    win.run();
+    // Run the engine (this takes control of the main loop)
+    engine.run();
     
     std.debug.print("Rewind shutting down...\n", .{});
 }
 
-// Sokol callbacks that will load assets and render sprites
-export fn init() void {
-    const sg = @import("sokol").gfx;
-    const sglue = @import("sokol").glue;
+// Game callbacks
+fn gameInit(engine: *rewind.Rewind) void {
+    std.debug.print("Game initializing...\n", .{});
     
-    // First, setup sokol graphics
-    sg.setup(.{
-        .environment = sglue.environment(),
-    });
-    
-    const allocator = gpa.allocator();
-    
-    // Initialize camera
-    main_camera = camera.Camera.init(800, 600);
-    
-    // Initialize sprite renderer
-    sprite_renderer = renderer.SpriteRenderer.init(allocator) catch |err| {
-        std.debug.print("Failed to init sprite renderer: {}\n", .{err});
-        return;
+    // Load textures
+    player_texture_id = engine.loadTexture("textures/player.png") catch blk: {
+        std.debug.print("Failed to load player texture\n", .{});
+        break :blk 0;
     };
     
-    var asset_loader = assets.AssetLoader.init(allocator, "assets");
+    enemy_texture_id = engine.loadTexture("textures/enemy.png") catch blk: {
+        std.debug.print("Failed to load enemy texture\n", .{});
+        break :blk 0;
+    };
     
-    // Load player texture
-    if (asset_loader.loadImage("textures/player.png")) |image| {
-        var loaded_image = image;
-        defer loaded_image.deinit();
-        player_texture_id = sprite_renderer.loadTexture(loaded_image) catch 0;
-        std.debug.print("Loaded player texture: {}x{}\n", .{ loaded_image.width, loaded_image.height });
-    } else |err| {
-        std.debug.print("Failed to load player: {}\n", .{err});
-    }
-    
-    // Load enemy texture
-    if (asset_loader.loadImage("textures/enemy.png")) |image| {
-        var loaded_image = image;
-        defer loaded_image.deinit();
-        enemy_texture_id = sprite_renderer.loadTexture(loaded_image) catch 0;
-        std.debug.print("Loaded enemy texture: {}x{}\n", .{ loaded_image.width, loaded_image.height });
-    } else |err| {
-        std.debug.print("Failed to load enemy: {}\n", .{err});
-    }
+    std.debug.print("Loaded textures: player={}, enemy={}\n", .{ player_texture_id, enemy_texture_id });
 }
 
-export fn frame() void {
-    const sg = @import("sokol").gfx;
-    const sglue = @import("sokol").glue;
-    
-    // Clear with camera background color and setup render pass
-    sg.beginPass(.{
-        .swapchain = sglue.swapchain(),
-        .action = .{
-            .colors = .{
-                .{ .load_action = .CLEAR, .clear_value = .{ 
-                    .r = main_camera.background_color.r, 
-                    .g = main_camera.background_color.g, 
-                    .b = main_camera.background_color.b, 
-                    .a = main_camera.background_color.a 
-                } },
-                .{}, .{}, .{},
-            },
-        },
-    });
-    
-    // Get projection matrix from camera
-    const projection = main_camera.getProjectionMatrix();
-    
-    // Draw sprites side by side - try with high contrast colors to ensure visibility
-    if (player_texture_id >= 0) {
-        // First sprite - bright yellow (should be very visible against blue)
-        sprite_renderer.drawSprite(.{
+fn gameUpdate(engine: *rewind.Rewind, dt: f32) void {
+    // Game logic goes here
+    _ = engine;
+    _ = dt;
+}
+
+fn gameRender(engine: *rewind.Rewind) void {
+    // Draw sprites side by side with high contrast colors
+    if (player_texture_id >= 0) { // Texture ID 0 is valid
+        // First sprite - bright yellow
+        engine.drawSprite(.{
             .position = .{ .x = 300, .y = 200 },
             .size = .{ .x = 128, .y = 128 },
-            .color = .{ .r = 1, .g = 1, .b = 0, .a = 1 }, // Bright yellow
+            .color = .{ .r = 1, .g = 1, .b = 0, .a = 1 },
             .texture_id = 0,
         }) catch {};
         
-        // Second sprite - bright magenta (also very visible)
-        sprite_renderer.drawSprite(.{
+        // Second sprite - bright magenta  
+        engine.drawSprite(.{
             .position = .{ .x = 450, .y = 200 },
             .size = .{ .x = 128, .y = 128 },
-            .color = .{ .r = 1, .g = 0, .b = 1, .a = 1 }, // Bright magenta
+            .color = .{ .r = 1, .g = 0, .b = 1, .a = 1 },
             .texture_id = 0,
         }) catch {};
     }
-    
-    // Render all sprites
-    sprite_renderer.render(projection);
-    
-    sg.endPass();
-    sg.commit();
 }
 
-export fn cleanup() void {
-    sprite_renderer.deinit();
+fn gameCleanup(engine: *rewind.Rewind) void {
+    std.debug.print("Game cleanup\n", .{});
+    _ = engine;
 }
 
